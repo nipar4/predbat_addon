@@ -62,3 +62,20 @@ services:
       - /etc/localtime:/etc/localtime:ro
 ```
 See Steps above for required modifications
+
+## Advanced Configuration
+
+For both the Slim and Alpine based images there are now additional environment variables that can be set to allow the docker image to monitor Home Assistant and if needed restart predbat
+
+The following variables can be defined
+    
+```yaml    
+environment:	
+      WAIT_FOR_HA_HOST: IPADDRESS ##Home Assistant IPADDRESS
+      WAIT_FOR_HA_PORT: PORT ##Home Assistant PORT
+      WAIT_FOR_HA_INTERVAL: ##Interval between tests, default 10
+      WAIT_FOR_HA_MAX_FAILS: ##Number of failures before predbat restarts, default 3
+```
+
+If either of the Home assistant ipaddress or the home assistant port are not set then this functionality is disabled
+
