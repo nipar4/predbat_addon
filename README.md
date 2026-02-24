@@ -73,7 +73,6 @@ The following variables can be defined
 environment:	
       WAIT_FOR_HA_HOST: IPADDRESS ##Home Assistant IPADDRESS
       WAIT_FOR_HA_PORT: PORT ##Home Assistant PORT
-      WAIT_FOR_HA_TIMEOUT: ##Timeout, Default set to 300
       WAIT_FOR_HA_INTERVAL: ##Interval between tests, default 10
       WAIT_FOR_HA_MAX_FAILS: ##Number of failures before predbat restarts, default 3
 ```
