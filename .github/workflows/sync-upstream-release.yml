@@ -1,0 +1,51 @@
+name: Sync Upstream Predbat Release
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # Run every hour
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  check-and-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get latest upstream release tag
+        id: upstream
+        run: |
+          LATEST=$(curl -sf https://api.github.com/repos/springfall2008/batpred/releases/latest \
+            | jq -r '.tag_name')
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "Failed to fetch latest upstream release tag"
+            exit 1
+          fi
+          echo "Latest upstream release: $LATEST"
+          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Read current version
+        id: current
+        run: |
+          CURRENT=$(cat predbat_version.txt | tr -d '[:space:]')
+          echo "Current version: $CURRENT"
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Update version file if different
+        if: steps.upstream.outputs.tag != steps.current.outputs.version
+        run: |
+          echo "${{ steps.upstream.outputs.tag }}" > predbat_version.txt
+          echo "Updated predbat_version.txt to ${{ steps.upstream.outputs.tag }}"
+
+      - name: Commit and push updated version
+        if: steps.upstream.outputs.tag != steps.current.outputs.version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add predbat_version.txt
+          git commit -m "chore: bump predbat version to ${{ steps.upstream.outputs.tag }}"
+          git pull --rebase
+          git push
