@@ -10,15 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version_changed: ${{ steps.compare.outputs.changed }}
+      new_version: ${{ steps.upstream.outputs.tag }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Get latest upstream release tag
         id: upstream
         run: |
-          LATEST=$(curl -sf https://api.github.com/repos/springfall2008/batpred/releases/latest \
+          LATEST=$(curl -sf \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/springfall2008/batpred/releases/latest \
             | jq -r '.tag_name')
           if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
             echo "Failed to fetch latest upstream release tag"
@@ -34,14 +42,23 @@ jobs:
           echo "Current version: $CURRENT"
           echo "version=$CURRENT" >> $GITHUB_OUTPUT
 
-      - name: Update version file if different
-        if: steps.upstream.outputs.tag != steps.current.outputs.version
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.version }}" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version file
+        if: steps.compare.outputs.changed == 'true'
         run: |
           echo "${{ steps.upstream.outputs.tag }}" > predbat_version.txt
           echo "Updated predbat_version.txt to ${{ steps.upstream.outputs.tag }}"
 
       - name: Commit and push updated version
-        if: steps.upstream.outputs.tag != steps.current.outputs.version
+        if: steps.compare.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -49,3 +66,80 @@ jobs:
           git commit -m "chore: bump predbat version to ${{ steps.upstream.outputs.tag }}"
           git pull --rebase
           git push
+
+  build:
+    needs: check-and-sync
+    if: needs.check-and-sync.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      USER: ${{ secrets.DOCKERHUB_USERNAME }}
+      PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create local cache folders
+        run: |
+          mkdir -p /tmp/.buildx-cache-noble
+          mkdir -p /tmp/.buildx-cache-alpine
+          mkdir -p /tmp/.buildx-cache-slim
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build and push Noble image
+        run: |
+          docker buildx build \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg PREDBAT_VERSION=$PREDBAT_VERSION \
+            --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8 \
+            --file ./predbat/Dockerfile.noble \
+            --tag $USER/predbat_addon:latest \
+            --tag $USER/predbat_addon:${PREDBAT_VERSION} \
+            --cache-from=type=local,src=/tmp/.buildx-cache-noble \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-noble \
+            --push \
+            ./predbat/
+
+      - name: Build and push alpine image
+        run: |
+          docker buildx build \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg PREDBAT_VERSION=$PREDBAT_VERSION \
+            --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8 \
+            --file ./predbat/Dockerfile.alpine \
+            --tag $USER/predbat_addon:alpine-latest \
+            --tag $USER/predbat_addon:alpine-${PREDBAT_VERSION} \
+            --cache-from=type=local,src=/tmp/.buildx-cache-alpine \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-alpine \
+            --push \
+            ./predbat/
+
+      - name: Build and push slim image
+        run: |
+          docker buildx build \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg PREDBAT_VERSION=$PREDBAT_VERSION \
+            --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8 \
+            --file ./predbat/Dockerfile.slim \
+            --tag $USER/predbat_addon:slim-latest \
+            --tag $USER/predbat_addon:slim-${PREDBAT_VERSION} \
+            --cache-from=type=local,src=/tmp/.buildx-cache-slim \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-slim \
+            --push \
+            ./predbat/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PREDBAT_VERSION }}
+          name: Based on Predbat Version ${{ env.PREDBAT_VERSION }}
+          body: |
+            🔧 Built with predbat version `${{ env.PREDBAT_VERSION }}`
