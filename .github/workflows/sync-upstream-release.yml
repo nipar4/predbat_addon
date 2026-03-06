@@ -5,6 +5,9 @@ on:
     - cron: '0 * * * *'   # Run every hour
   workflow_dispatch:       # Allow manual trigger
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check-and-sync:
     runs-on: ubuntu-latest
