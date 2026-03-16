@@ -128,7 +128,7 @@ jobs:
             ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}latest
             ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}${{ env.PREDBAT_VERSION }}
           build-args: |
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ github.run_started_at }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
