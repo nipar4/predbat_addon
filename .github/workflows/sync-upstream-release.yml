@@ -119,7 +119,7 @@ jobs:
 
       - name: Debug build args
         run: |
-          echo "BUILD_DATE=${{ github.run_started_at }}"
+          echo "BUILD_DATE=${{ github.event.repository.updated_at }}"
           echo "PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}"          
 
       - name: Build and push ${{ matrix.variant }} image
