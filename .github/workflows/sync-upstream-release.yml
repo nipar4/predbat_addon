@@ -116,12 +116,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Debug build args
-        run: |
-          echo "BUILD_DATE=${{ github.event.repository.updated_at }}"
-          echo "PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}"          
-
+    
       - name: Build and push ${{ matrix.variant }} image
         uses: docker/build-push-action@v7
         with:
