@@ -77,4 +77,19 @@ ADD --chown=${USER_NAME} \
 # s6 service definitions
 COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/
 
+# Define build arguments and labels
+LABEL \
+    io.hass.type="addon" \
+    addon.version="1.7.1" \
+    maintainer="nipar4 (https://github.com/nipar4/predbat_addon)" \
+    org.opencontainers.image.vendor="Springfall2008" \
+    org.opencontainers.image.authors="springfall2008, nipar4" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.url="https://github.com/springfall2008, https://github.com/nipar4/predbat_addon" \
+    org.opencontainers.image.source="https://github.com/nipar4/predbat_addon" \
+    org.opencontainers.image.documentation="https://github.com/springfall2008/predbat_addon/blob/main/predbat/DOCS.md" \
+    org.opencontainers.image.created=${BUILD_DATE} \
+    org.opencontainers.image.title="Predbat Addon Docker version" \
+    org.opencontainers.image.base.digest=${BASE_IMAGE} \
+    org.opencontainers.image.version=${PREDBAT_VERSION}
 ENTRYPOINT ["/init"]
