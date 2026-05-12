@@ -14,7 +14,7 @@ else
 fi
 
 # Block until config is valid
-while grep -q "^[^#]*template: True" /config/apps.yaml; do
+while grep -q "^[^#]*template: true" /config/apps.yaml; do
     echo "#################################################"
     echo "Please update apps.yaml"
     echo "Remove 'template: True'"
