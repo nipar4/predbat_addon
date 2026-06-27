@@ -105,6 +105,10 @@ jobs:
         with:
           ref: ${{ needs.check-and-sync.outputs.commit_sha || github.sha }}
 
+      - name: Validate version
+        run: |
+          [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty version!"; exit 1; }
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
@@ -136,7 +140,8 @@ jobs:
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
-
+          provenance: true
+          sbom: true
   release:
     needs: [check-and-sync, build]
     if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
