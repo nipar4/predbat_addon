@@ -53,6 +53,7 @@ ARG GID="9005"
 ARG PREDBAT_VERSION
 ARG BASE_IMAGE
 ARG BUILD_DATE
+ARG ADDON_VERSION
 
 WORKDIR /config
 USER root
@@ -81,7 +82,7 @@ COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/
 # Define build arguments and labels
 LABEL \
     io.hass.type="addon" \
-    addon.version="1.7.1" \
+    addon.version=${ADDON_VERSION} \
     maintainer="nipar4 (https://github.com/nipar4/predbat_addon)" \
     org.opencontainers.image.vendor="Springfall2008" \
     org.opencontainers.image.authors="springfall2008, nipar4" \

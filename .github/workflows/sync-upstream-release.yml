@@ -3,7 +3,13 @@ name: Sync Upstream Predbat Release
 on:
   schedule:
     - cron: '0 * * * *'   
-  workflow_dispatch:       # Allow manual trigger
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'predbat/requirements.txt'
+      - 'addon_version.txt'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,13 +23,24 @@ jobs:
     outputs:
       version_changed: ${{ steps.compare.outputs.changed }}
       new_version: ${{ steps.upstream.outputs.tag }}
+      addon_version: ${{ steps.addon_version.outputs.addon_version }}
       commit_sha: ${{ steps.push.outputs.sha }}
+      addon_triggered: ${{ steps.trigger.outputs.addon_triggered }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Detect trigger source
+        id: trigger
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "addon_triggered=true" >> $GITHUB_OUTPUT
+          else
+            echo "addon_triggered=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get latest upstream release tag
         id: upstream
@@ -45,12 +62,19 @@ jobs:
         run: |
           CURRENT=$(cat predbat_version.txt | tr -d '[:space:]')
           echo "Current version: $CURRENT"
-          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "predbat_version=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Read addon version
+        id: addon_version
+        run: |
+          VERSION=$(cat addon_version.txt | tr -d '[:space:]')
+          echo "Addon version: $VERSION"
+          echo "addon_version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Compare versions
         id: compare
         run: |
-          if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.version }}" ]; then
+          if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.predbat_version }}" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -76,7 +100,7 @@ jobs:
 
   build:
     needs: check-and-sync
-    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch' || needs.check-and-sync.outputs.addon_triggered == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,6 +122,7 @@ jobs:
     env:
       USER: ${{ secrets.DOCKERHUB_USERNAME }}
       PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
 
     steps:
       - name: Checkout code
@@ -107,7 +132,8 @@ jobs:
 
       - name: Validate version
         run: |
-          [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty version!"; exit 1; }
+          [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty predbat version!"; exit 1; }
+          [ -n "${{ env.ADDON_VERSION }}" ] || { echo "Empty addon version!"; exit 1; }
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -138,19 +164,22 @@ jobs:
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.value }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
+            ADDON_VERSION=${{ env.ADDON_VERSION }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
           provenance: true
           sbom: true
+
   release:
     needs: [check-and-sync, build]
-    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch' || needs.check-and-sync.outputs.addon_triggered == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     env:
       PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
 
     steps:
       - name: Create GitHub Release
@@ -160,3 +189,4 @@ jobs:
           name: Based on Predbat Version ${{ env.PREDBAT_VERSION }}
           body: |
             🔧 Built with predbat version `${{ env.PREDBAT_VERSION }}`
+            📦 Addon base version `${{ env.ADDON_VERSION }}`

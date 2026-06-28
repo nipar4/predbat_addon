@@ -7,6 +7,7 @@ ARG GID="9005"
 ARG PREDBAT_VERSION
 ARG BASE_IMAGE="ubuntu:latest"
 ARG BUILD_DATE
+ARG ADDON_VERSION
 # Set the working directory
 WORKDIR /addon
 
@@ -38,7 +39,7 @@ USER root
 # Define build arguments and labels
 LABEL \
     io.hass.type="addon" \
-    addon.version="1.7.1" \
+    addon.version=${ADDON_VERSION} \
     maintainer="nipar4 (https://github.com/nipar4/predbat_addon)" \
     org.opencontainers.image.vendor="Springfall2008" \
     org.opencontainers.image.authors="springfall2008, nipar4" \
