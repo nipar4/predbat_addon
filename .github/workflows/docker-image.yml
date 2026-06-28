@@ -82,7 +82,7 @@ jobs:
           echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.PREDBAT_VERSION }}
           name: Based on Predbat Version ${{ env.PREDBAT_VERSION }}
