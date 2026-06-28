@@ -1,0 +1,126 @@
+name: Sync Upstream Predbat Addon
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC (offset from predbat sync)
+  workflow_dispatch:        # Allow manual trigger
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-and-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Get latest upstream addon release tag
+        id: upstream
+        run: |
+          set -euo pipefail
+          LATEST=$(curl -sf \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/springfall2008/predbat_addon/releases/latest \
+            | jq -r '.tag_name')
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "Failed to fetch latest upstream addon release tag"
+            exit 1
+          fi
+          echo "Latest upstream addon release: $LATEST"
+          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Read current addon version
+        id: current
+        run: |
+          CURRENT=$(cat addon_version.txt | tr -d '[:space:]')
+          echo "Current addon version: $CURRENT"
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Fetch upstream requirements.txt
+        id: fetch_requirements
+        run: |
+          set -euo pipefail
+          curl -sf \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/springfall2008/predbat_addon/contents/predbat/requirements.txt?ref=${{ steps.upstream.outputs.tag }}" \
+            | jq -r '.content' \
+            | base64 -d > /tmp/upstream_requirements.txt
+          echo "Fetched upstream requirements.txt"
+
+      - name: Check for changes
+        id: changes
+        run: |
+          VERSION_CHANGED=false
+          REQUIREMENTS_CHANGED=false
+
+          if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.version }}" ]; then
+            echo "Addon version changed: ${{ steps.current.outputs.version }} -> ${{ steps.upstream.outputs.tag }}"
+            VERSION_CHANGED=true
+          fi
+
+          if ! diff -q predbat/requirements.txt /tmp/upstream_requirements.txt > /dev/null 2>&1; then
+            echo "requirements.txt has changed"
+            REQUIREMENTS_CHANGED=true
+          fi
+
+          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
+          echo "requirements_changed=$REQUIREMENTS_CHANGED" >> $GITHUB_OUTPUT
+
+          if [ "$VERSION_CHANGED" = "true" ] || [ "$REQUIREMENTS_CHANGED" = "true" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected, skipping PR"
+          fi
+
+      - name: Apply changes
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          if [ "${{ steps.changes.outputs.version_changed }}" = "true" ]; then
+            echo "${{ steps.upstream.outputs.tag }}" > addon_version.txt
+            echo "Updated addon_version.txt"
+          fi
+
+          if [ "${{ steps.changes.outputs.requirements_changed }}" = "true" ]; then
+            cp /tmp/upstream_requirements.txt predbat/requirements.txt
+            echo "Updated requirements.txt"
+          fi
+
+      - name: Build PR body
+        if: steps.changes.outputs.has_changes == 'true'
+        id: pr_body
+        run: |
+          BODY="## Upstream predbat_addon changes detected"$'\n\n'
+
+          if [ "${{ steps.changes.outputs.version_changed }}" = "true" ]; then
+            BODY+="- 🔖 **Addon version:** \`${{ steps.current.outputs.version }}\` → \`${{ steps.upstream.outputs.tag }}\`"$'\n'
+          fi
+
+          if [ "${{ steps.changes.outputs.requirements_changed }}" = "true" ]; then
+            BODY+="- 📦 **requirements.txt** has changed"$'\n'
+            BODY+=$'\n```diff\n'
+            BODY+="$(diff predbat/requirements.txt /tmp/upstream_requirements.txt || true)"
+            BODY+=$'\n```\n'
+          fi
+
+          BODY+=$'\nReview and merge to trigger a new image build.'
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Open Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: upstream-addon-sync/${{ steps.upstream.outputs.tag }}
+          commit-message: "chore: sync addon ${{ steps.upstream.outputs.tag }} from upstream"
+          title: "chore: upstream predbat_addon ${{ steps.upstream.outputs.tag }}"
+          body: ${{ steps.pr_body.outputs.body }}
+          delete-branch: true
