@@ -123,4 +123,5 @@ jobs:
           commit-message: "chore: sync addon ${{ steps.upstream.outputs.tag }} from upstream"
           title: "chore: upstream predbat_addon ${{ steps.upstream.outputs.tag }}"
           body: ${{ steps.pr_body.outputs.body }}
+          labels: upstream-sync
           delete-branch: true
