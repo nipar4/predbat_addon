@@ -14,14 +14,50 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
+      issues: write   # for failure notification on conflict
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history needed for merge
 
-      - name: Get latest upstream addon release tag
-        id: upstream
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/springfall2008/predbat_addon.git
+          git fetch upstream
+
+      - name: Detect if update available
+        id: check
+        run: |
+          LOCAL=$(git rev-parse main)
+          REMOTE=$(git rev-parse upstream/main)
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Merge upstream/main
+        if: steps.check.outputs.changed == 'true'
+        id: merge
+        run: |
+          git checkout main
+          if ! git merge upstream/main --no-edit; then
+            git merge --abort
+            echo "conflict=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "conflict=false" >> $GITHUB_OUTPUT
+
+      - name: Update addon version
+        if: steps.check.outputs.changed == 'true' && steps.merge.outputs.conflict == 'false'
+        id: addon_version
         run: |
           set -euo pipefail
           LATEST=$(curl -sf \
@@ -32,96 +68,27 @@ jobs:
             echo "Failed to fetch latest upstream addon release tag"
             exit 1
           fi
-          echo "Latest upstream addon release: $LATEST"
-          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+          sed -i "s/^ADDON_VERSION=.*/ADDON_VERSION=${LATEST}/" versions.env
+          echo "tag=${LATEST}" >> $GITHUB_OUTPUT
 
-      - name: Read current addon version
-        id: current
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true' && steps.merge.outputs.conflict == 'false'
         run: |
-          CURRENT=$(cat addon_version.txt | tr -d '[:space:]')
-          echo "Current addon version: $CURRENT"
-          echo "version=$CURRENT" >> $GITHUB_OUTPUT
-
-      - name: Fetch upstream requirements.txt
-        id: fetch_requirements
-        run: |
-          set -euo pipefail
-          curl -sf \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/springfall2008/predbat_addon/contents/predbat/requirements.txt?ref=${{ steps.upstream.outputs.tag }}" \
-            | jq -r '.content' \
-            | base64 -d > /tmp/upstream_requirements.txt
-          echo "Fetched upstream requirements.txt"
-
-      - name: Check for changes
-        id: changes
-        run: |
-          VERSION_CHANGED=false
-          REQUIREMENTS_CHANGED=false
-
-          if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.version }}" ]; then
-            echo "Addon version changed: ${{ steps.current.outputs.version }} -> ${{ steps.upstream.outputs.tag }}"
-            VERSION_CHANGED=true
+          if ! git diff --quiet versions.env; then
+            git add versions.env
+            git commit -m "chore: bump addon version to ${{ steps.addon_version.outputs.tag }}"
           fi
+          git push origin main
 
-          if ! diff -q predbat/requirements.txt /tmp/upstream_requirements.txt > /dev/null 2>&1; then
-            echo "requirements.txt has changed"
-            REQUIREMENTS_CHANGED=true
-          fi
-
-          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
-          echo "requirements_changed=$REQUIREMENTS_CHANGED" >> $GITHUB_OUTPUT
-
-          if [ "$VERSION_CHANGED" = "true" ] || [ "$REQUIREMENTS_CHANGED" = "true" ]; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No changes detected, skipping PR"
-          fi
-
-      - name: Apply changes
-        if: steps.changes.outputs.has_changes == 'true'
-        run: |
-          if [ "${{ steps.changes.outputs.version_changed }}" = "true" ]; then
-            echo "${{ steps.upstream.outputs.tag }}" > addon_version.txt
-            echo "Updated addon_version.txt"
-          fi
-
-          if [ "${{ steps.changes.outputs.requirements_changed }}" = "true" ]; then
-            cp /tmp/upstream_requirements.txt predbat/requirements.txt
-            echo "Updated requirements.txt"
-          fi
-
-      - name: Build PR body
-        if: steps.changes.outputs.has_changes == 'true'
-        id: pr_body
-        run: |
-          BODY="## Upstream predbat_addon changes detected"$'\n\n'
-
-          if [ "${{ steps.changes.outputs.version_changed }}" = "true" ]; then
-            BODY+="- 🔖 **Addon version:** \`${{ steps.current.outputs.version }}\` → \`${{ steps.upstream.outputs.tag }}\`"$'\n'
-          fi
-
-          if [ "${{ steps.changes.outputs.requirements_changed }}" = "true" ]; then
-            BODY+="- 📦 **requirements.txt** has changed"$'\n'
-            BODY+=$'\n```diff\n'
-            BODY+="$(diff predbat/requirements.txt /tmp/upstream_requirements.txt || true)"
-            BODY+=$'\n```\n'
-          fi
-
-          BODY+=$'\nReview and merge to trigger a new image build.'
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Open Pull Request
-        if: steps.changes.outputs.has_changes == 'true'
-        uses: peter-evans/create-pull-request@v8
+      - name: Open issue on conflict
+        if: failure() && steps.check.outputs.changed == 'true'
+        uses: actions/github-script@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: upstream-addon-sync/${{ steps.upstream.outputs.tag }}
-          commit-message: "chore: sync addon ${{ steps.upstream.outputs.tag }} from upstream"
-          title: "chore: upstream predbat_addon ${{ steps.upstream.outputs.tag }}"
-          body: ${{ steps.pr_body.outputs.body }}
-          labels: upstream-sync
-          delete-branch: true
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Upstream addon merge conflict - ${new Date().toISOString().slice(0,10)}`,
+              body: `Automated merge from \`springfall2008/predbat_addon\` (main) failed due to a conflict.\n\nManual resolution required:\n\`\`\`bash\ngit remote add upstream https://github.com/springfall2008/predbat_addon.git\ngit fetch upstream\ngit checkout main\ngit merge upstream/main\n# resolve conflicts\ngit push origin main\n\`\`\`\n\nWorkflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['upstream-sync', 'conflict']
+            });
