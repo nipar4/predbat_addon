@@ -9,7 +9,7 @@ on:
       - main
     paths:
       - 'predbat/requirements.txt'
-      - 'addon_version.txt'
+      - 'versions.env'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -60,16 +60,18 @@ jobs:
       - name: Read current version
         id: current
         run: |
-          CURRENT=$(cat predbat_version.txt | tr -d '[:space:]')
-          echo "Current version: $CURRENT"
-          echo "predbat_version=$CURRENT" >> $GITHUB_OUTPUT
+          source versions.env
+          PREDBAT_VERSION_CLEAN=$(echo "$PREDBAT_VERSION" | tr -d '[:space:]')
+          echo "Current version: $PREDBAT_VERSION_CLEAN"
+          echo "predbat_version=$PREDBAT_VERSION_CLEAN" >> $GITHUB_OUTPUT
 
       - name: Read addon version
         id: addon_version
         run: |
-          VERSION=$(cat addon_version.txt | tr -d '[:space:]')
-          echo "Addon version: $VERSION"
-          echo "addon_version=$VERSION" >> $GITHUB_OUTPUT
+          source versions.env
+          ADDON_VERSION_CLEAN=$(echo "$ADDON_VERSION" | tr -d '[:space:]')
+          echo "Addon version: $ADDON_VERSION_CLEAN"
+          echo "addon_version=$ADDON_VERSION_CLEAN" >> $GITHUB_OUTPUT
 
       - name: Compare versions
         id: compare
@@ -83,8 +85,8 @@ jobs:
       - name: Update version file
         if: steps.compare.outputs.changed == 'true'
         run: |
-          echo "${{ steps.upstream.outputs.tag }}" > predbat_version.txt
-          echo "Updated predbat_version.txt to ${{ steps.upstream.outputs.tag }}"
+          sed -i "s/^PREDBAT_VERSION=.*/PREDBAT_VERSION=${{ steps.upstream.outputs.tag }}/" versions.env
+          echo "Updated versions.env to ${{ steps.upstream.outputs.tag }}"
 
       - name: Commit and push updated version
         id: push
@@ -92,7 +94,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add predbat_version.txt
+          git add versions.env
           git commit -m "chore: bump predbat version to ${{ steps.upstream.outputs.tag }}"
           git pull --rebase
           git push
