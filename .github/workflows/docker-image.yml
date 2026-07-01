@@ -6,7 +6,7 @@ on:
 #on:
 #  push:
 #    paths:
-#      - 'predbat_version.txt'   # Trigger only when this file changes
+#      - 'versions.env'   # Trigger only when this file changes
 
 jobs:
   build:
@@ -35,8 +35,8 @@ jobs:
 
       - name: Read version
         run: |
-          PREDBAT_VERSION=$(cat predbat_version.txt | tr -d '[:space:]')
-          echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> $GITHUB_ENV
+          source versions.env
+          echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -78,8 +78,8 @@ jobs:
 
       - name: Read version
         run: |
-          PREDBAT_VERSION=$(cat predbat_version.txt | tr -d '[:space:]')
-          echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> $GITHUB_ENV
+          source versions.env
+          echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
