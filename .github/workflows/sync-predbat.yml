@@ -24,6 +24,7 @@ jobs:
       version_changed: ${{ steps.compare.outputs.changed }}
       new_version: ${{ steps.upstream.outputs.tag }}
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
+      s6_version: ${{ steps.s6_version.outputs.s6_version }}
       commit_sha: ${{ steps.push.outputs.sha }}
       addon_triggered: ${{ steps.trigger.outputs.addon_triggered }}
       addon_current: ${{ steps.addon_check.outputs.addon_current }}
@@ -73,6 +74,14 @@ jobs:
           ADDON_VERSION_CLEAN=$(echo "$ADDON_VERSION" | tr -d '[:space:]')
           echo "Addon version: $ADDON_VERSION_CLEAN"
           echo "addon_version=$ADDON_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+
+      - name: Read s6 version
+        id: s6_version
+        run: |
+          source versions.env
+          S6_VERSION_CLEAN=$(echo "$S6_VERSION" | tr -d '[:space:]')
+          echo "S6 version: $S6_VERSION_CLEAN"
+          echo "s6_version=$S6_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
 
       - name: Check addon is current
         id: addon_check
@@ -145,6 +154,7 @@ jobs:
       USER: ${{ secrets.DOCKERHUB_USERNAME }}
       PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
       ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
+      S6_VERSION: ${{ needs.check-and-sync.outputs.s6_version }}
 
     steps:
       - name: Checkout code
@@ -156,6 +166,7 @@ jobs:
         run: |
           [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty predbat version!"; exit 1; }
           [ -n "${{ env.ADDON_VERSION }}" ] || { echo "Empty addon version!"; exit 1; }
+          [ -n "${{ env.S6_VERSION }}" ] || { echo "Empty s6 version!"; exit 1; }
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -187,6 +198,7 @@ jobs:
             BUILD_DATE=${{ steps.date.outputs.value }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
             ADDON_VERSION=${{ env.ADDON_VERSION }}
+            S6_VERSION=${{ env.S6_VERSION }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
           provenance: true

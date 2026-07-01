@@ -87,10 +87,13 @@ predbat/
   `Dockerfile.noble`/`.alpine`/`.slim` (and their `rootfs/{noble,alpine}/*` support files) are original to
   this fork — upstream has no equivalent, so nothing merges in to keep them current; any base image or
   tooling bump in those has to be done here.
-- **`ARG S6_VERSION=v3.2.2.0` in `Dockerfile.alpine`/`.slim` is not tracked by Dependabot.** It's consumed
-  inside a `RUN`/`ADD` download URL rather than a `FROM` line, so Dependabot's `docker` ecosystem (which only
-  parses `FROM image:tag`, or an `ARG` with a literal default feeding a `FROM`) never sees it. Check
-  https://github.com/just-containers/s6-overlay/releases periodically and bump the `ARG` by hand if needed.
+- **`S6_VERSION` (used by `Dockerfile.alpine`/`.slim`) is not tracked by Dependabot.** It's consumed inside a
+  `RUN`/`ADD` download URL rather than a `FROM` line, so Dependabot's `docker` ecosystem (which only parses
+  `FROM image:tag`, or an `ARG` with a literal default feeding a `FROM`) never sees it. It lives in
+  `versions.env` (same as `PREDBAT_VERSION`/`ADDON_VERSION`) and is passed through as a build-arg by
+  `sync-predbat.yml`/`docker-image.yml`, so there's one place to bump it by hand — the Dockerfiles' own
+  `ARG S6_VERSION=v3.2.2.0` default is only a fallback for building without CI/`versions.env` and should be
+  kept in sync manually if bumped. Check https://github.com/just-containers/s6-overlay/releases periodically.
 - **No app code is vendored.** `Dockerfile.noble`/`.alpine`/`.slim` pull Predbat straight from GitHub with
   Docker's `ADD https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ ...` syntax —
   changing `PREDBAT_VERSION` and rebuilding is how the app itself gets updated, not editing files in this repo.

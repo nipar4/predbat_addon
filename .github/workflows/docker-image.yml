@@ -37,6 +37,7 @@ jobs:
         run: |
           source versions.env
           echo "PREDBAT_VERSION=$PREDBAT_VERSION" >> "$GITHUB_ENV"
+          echo "S6_VERSION=$S6_VERSION" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -63,6 +64,7 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
+            S6_VERSION=${{ env.S6_VERSION }}
           cache-from: type=gha,scope=push-${{ matrix.variant }}
           cache-to: type=gha,scope=push-${{ matrix.variant }},mode=max
 
