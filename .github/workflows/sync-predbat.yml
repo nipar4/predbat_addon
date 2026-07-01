@@ -26,6 +26,7 @@ jobs:
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
       commit_sha: ${{ steps.push.outputs.sha }}
       addon_triggered: ${{ steps.trigger.outputs.addon_triggered }}
+      addon_current: ${{ steps.addon_check.outputs.addon_current }}
 
     steps:
       - name: Checkout code
@@ -37,9 +38,9 @@ jobs:
         id: trigger
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "addon_triggered=true" >> $GITHUB_OUTPUT
+            echo "addon_triggered=true" >> "$GITHUB_OUTPUT"
           else
-            echo "addon_triggered=false" >> $GITHUB_OUTPUT
+            echo "addon_triggered=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Get latest upstream release tag
@@ -55,7 +56,7 @@ jobs:
             exit 1
           fi
           echo "Latest upstream release: $LATEST"
-          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+          echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
 
       - name: Read current version
         id: current
@@ -63,7 +64,7 @@ jobs:
           source versions.env
           PREDBAT_VERSION_CLEAN=$(echo "$PREDBAT_VERSION" | tr -d '[:space:]')
           echo "Current version: $PREDBAT_VERSION_CLEAN"
-          echo "predbat_version=$PREDBAT_VERSION_CLEAN" >> $GITHUB_OUTPUT
+          echo "predbat_version=$PREDBAT_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
 
       - name: Read addon version
         id: addon_version
@@ -71,15 +72,34 @@ jobs:
           source versions.env
           ADDON_VERSION_CLEAN=$(echo "$ADDON_VERSION" | tr -d '[:space:]')
           echo "Addon version: $ADDON_VERSION_CLEAN"
-          echo "addon_version=$ADDON_VERSION_CLEAN" >> $GITHUB_OUTPUT
+          echo "addon_version=$ADDON_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+
+      - name: Check addon is current
+        id: addon_check
+        run: |
+          set -euo pipefail
+          LATEST_ADDON=$(curl -sf \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/springfall2008/predbat_addon/releases/latest \
+            | jq -r '.tag_name')
+          if [ -z "$LATEST_ADDON" ] || [ "$LATEST_ADDON" = "null" ]; then
+            echo "Failed to fetch latest upstream addon release tag"
+            exit 1
+          fi
+          if [ "$LATEST_ADDON" != "${{ steps.addon_version.outputs.addon_version }}" ]; then
+            echo "Addon out of date: have ${{ steps.addon_version.outputs.addon_version }}, upstream is $LATEST_ADDON - skipping build until addon sync catches up"
+            echo "addon_current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "addon_current=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compare versions
         id: compare
         run: |
           if [ "${{ steps.upstream.outputs.tag }}" != "${{ steps.current.outputs.predbat_version }}" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Update version file
@@ -98,11 +118,11 @@ jobs:
           git commit -m "chore: bump predbat version to ${{ steps.upstream.outputs.tag }}"
           git pull --rebase
           git push
-          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   build:
     needs: check-and-sync
-    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch' || needs.check-and-sync.outputs.addon_triggered == 'true'
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && (needs.check-and-sync.outputs.version_changed == 'true' || needs.check-and-sync.outputs.addon_triggered == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -151,7 +171,7 @@ jobs:
 
       - name: Set build date
         id: date
-        run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
+        run: echo "value=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
           
       - name: Build and push ${{ matrix.variant }} image
         uses: docker/build-push-action@v7
@@ -174,7 +194,7 @@ jobs:
 
   release:
     needs: [check-and-sync, build]
-    if: needs.check-and-sync.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch' || needs.check-and-sync.outputs.addon_triggered == 'true'
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && (needs.check-and-sync.outputs.version_changed == 'true' || needs.check-and-sync.outputs.addon_triggered == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
