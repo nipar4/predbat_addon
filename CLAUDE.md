@@ -51,9 +51,32 @@ predbat/
   sync-predbat.yml           # hourly: checks upstream batpred releases, bumps PREDBAT_VERSION, builds+pushes all 3 image variants, cuts a GitHub release
   sync-addon.yml              # daily: merges upstream springfall2008/predbat_addon main, bumps ADDON_VERSION, triggers sync-predbat.yml
   docker-image.yml               # manual-dispatch-only build+push of all 3 variants (superseded by sync-predbat.yml's build job, kept for manual builds)
-  lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push
+  lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push and PR
   dependabot.yml
 ```
+
+## Workflow conventions (established during a workflow security review)
+
+- **Third-party actions are pinned to commit SHAs**, not floating tags, with a trailing `# vX.Y.Z` comment
+  for readability, e.g. `actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0`. This guards
+  against a tag being force-moved to different code. Dependabot's `github-actions` ecosystem (configured
+  in `dependabot.yml`) still resolves and updates SHA-pinned actions — it updates both the SHA and the
+  version comment in its PRs, so update PRs keep working as before. When adding a new third-party action,
+  look up its SHA via the GitHub API (`api.github.com/repos/<owner>/<repo>/tags`) rather than using a tag
+  directly, and follow the same pattern.
+- **Any job that writes with `git push` should `git pull --rebase` immediately before pushing.** Both
+  `sync-predbat.yml` (the `check-and-sync` job) and `sync-addon.yml` (the `check-and-merge` job) can run
+  close together and both write to `versions.env` on different lines — the rebase avoids a non-fast-forward
+  push failure if the other workflow lands a commit in between.
+- **GitHub Actions job `permissions:` blocks are all-or-nothing once declared** — any scope you don't list
+  is set to `none`, not the default `read`/`write`. If a step needs a new capability (e.g. `gh workflow run`
+  needs `actions: write`, `softprops/action-gh-release` needs `contents: write`), the job's `permissions:`
+  block must explicitly list it or the step silently 403s. `sync-addon.yml`'s `check-and-merge` job hit this
+  exact bug (missing `actions: write` for its "Trigger predbat sync build" step) before it was fixed.
+- `sync-addon.yml`'s conflict handling is split into two issue-filing steps: one gated on
+  `steps.merge.outputs.conflict == 'true'` (an actual `git merge` conflict, with resolution instructions),
+  and a separate one for any other failure (e.g. a flaky upstream API fetch) so the filed issue doesn't
+  misdiagnose the cause.
 
 ## Key mechanics worth understanding before editing
 
@@ -78,10 +101,13 @@ predbat/
 
 ## Working with GitHub Actions changes
 
-- Validate workflow YAML with `actionlint` locally before pushing (CI runs it on every push to
-  `.github/workflows/*.yml` via `lint-workflows.yml`):
+- Validate workflow YAML with `actionlint` locally before pushing (CI runs it on every push and PR touching
+  `.github/workflows/*.yml` via `lint-workflows.yml`, which downloads a specific checksum-verified
+  actionlint release rather than piping an unpinned installer script):
   ```bash
-  bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+  ACTIONLINT_VERSION="1.7.12"
+  curl -sSfLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+  tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
   ./actionlint .github/workflows/*.yml
   ```
 - The build workflows require `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets and push multi-arch
