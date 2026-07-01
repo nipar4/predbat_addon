@@ -17,4 +17,4 @@ jobs:
       - name: Run actionlint
         run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          ./actionlint .github/workflows/sync-predbat.yml .github/workflows/sync-addon.yml
+          ./actionlint .github/workflows/*.yml
