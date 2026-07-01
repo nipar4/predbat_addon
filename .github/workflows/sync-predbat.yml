@@ -125,7 +125,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && (needs.check-and-sync.outputs.version_changed == 'true' || needs.check-and-sync.outputs.addon_triggered == 'true'))
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     strategy:
       fail-fast: false
