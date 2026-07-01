@@ -38,9 +38,9 @@ jobs:
           LOCAL=$(git rev-parse main)
           REMOTE=$(git rev-parse upstream/main)
           if [ "$LOCAL" = "$REMOTE" ]; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Merge upstream/main
@@ -50,10 +50,10 @@ jobs:
           git checkout main
           if ! git merge upstream/main --no-edit; then
             git merge --abort
-            echo "conflict=true" >> $GITHUB_OUTPUT
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-          echo "conflict=false" >> $GITHUB_OUTPUT
+          echo "conflict=false" >> "$GITHUB_OUTPUT"
 
       - name: Update addon version
         if: steps.check.outputs.changed == 'true' && steps.merge.outputs.conflict == 'false'
@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
           sed -i "s/^ADDON_VERSION=.*/ADDON_VERSION=${LATEST}/" versions.env
-          echo "tag=${LATEST}" >> $GITHUB_OUTPUT
+          echo "tag=${LATEST}" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push
         if: steps.check.outputs.changed == 'true' && steps.merge.outputs.conflict == 'false'
@@ -79,6 +79,12 @@ jobs:
             git commit -m "chore: bump addon version to ${{ steps.addon_version.outputs.tag }}"
           fi
           git push origin main
+
+      - name: Trigger predbat sync build
+        if: steps.check.outputs.changed == 'true' && steps.merge.outputs.conflict == 'false'
+        run: gh workflow run sync-predbat.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Open issue on conflict
         if: failure() && steps.check.outputs.changed == 'true'
