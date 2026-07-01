@@ -15,4 +15,6 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run actionlint
-        uses: rhysd/actionlint@v1
+        run: |
+          bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint .github/workflows/sync-predbat.yml .github/workflows/sync-addon.yml
