@@ -27,14 +27,14 @@ and, where possible, a local `docker build`, rather than looking for a test suit
 versions.env              # single source of truth for PREDBAT_VERSION / ADDON_VERSION
 repository.yaml            # HA add-on repository metadata
 predbat/
-  config.yaml               # HA add-on manifest (slug, ports, options schema, version)
-  build.yaml                 # base images per arch for the HA add-on build
-  Dockerfile                  # legacy HA add-on Dockerfile (BUILD_FROM base, apk pip install)
+  config.yaml               # HA add-on manifest (slug, ports, options schema, version) — synced from upstream, not fork-maintained
+  build.yaml                 # base images per arch for the HAOS add-on build — synced from upstream, not fork-maintained
+  Dockerfile                  # the actual HAOS add-on Dockerfile (BUILD_FROM from build.yaml) — synced from upstream, not fork-maintained
   Dockerfile.old               # legacy Ubuntu-noble-based image with apt-installed python deps
-  Dockerfile.noble               # ubuntu:latest based, fetches Predbat via `ADD <git-url>`
-  Dockerfile.alpine                # multi-stage: python:3.13-alpine + s6-overlay, fetches Predbat via `ADD <git-url>`
-  Dockerfile.slim                   # multi-stage: python:3.13-slim-bookworm + s6-overlay, same pattern as alpine
-  Dockerfile.standalone              # variant for the "run.sh"-based startup instead of s6
+  Dockerfile.noble               # ubuntu:latest based, fetches Predbat via `ADD <git-url>` — fork-original
+  Dockerfile.alpine                # multi-stage: python:3.13-alpine + s6-overlay, fetches Predbat via `ADD <git-url>` — fork-original
+  Dockerfile.slim                   # multi-stage: python:3.13-slim-bookworm + s6-overlay, same pattern as alpine — fork-original
+  Dockerfile.standalone              # standalone (non-HAOS) Dockerfile — synced from upstream, not fork-maintained
   requirements.txt                    # Python deps installed into the image (independent of Predbat's own reqs)
   rootfs/                              # files copied/ADDed into images; several parallel variants exist:
     startup.py, run.sh, run.csh          # used by Dockerfile / Dockerfile.old (legacy, non-s6 paths)
@@ -80,6 +80,17 @@ predbat/
 
 ## Key mechanics worth understanding before editing
 
+- **Not everything under `predbat/` is fork-maintained.** `Dockerfile`, `Dockerfile.standalone`,
+  `config.yaml`, and `build.yaml` come from the upstream `springfall2008/predbat_addon` repo and are kept
+  current purely by `sync-addon.yml`'s daily merge — if upstream bumps the HAOS base image in `build.yaml`,
+  it lands here automatically, no manual tracking or Dependabot entry needed for those files. By contrast,
+  `Dockerfile.noble`/`.alpine`/`.slim` (and their `rootfs/{noble,alpine}/*` support files) are original to
+  this fork — upstream has no equivalent, so nothing merges in to keep them current; any base image or
+  tooling bump in those has to be done here.
+- **`ARG S6_VERSION=v3.2.2.0` in `Dockerfile.alpine`/`.slim` is not tracked by Dependabot.** It's consumed
+  inside a `RUN`/`ADD` download URL rather than a `FROM` line, so Dependabot's `docker` ecosystem (which only
+  parses `FROM image:tag`, or an `ARG` with a literal default feeding a `FROM`) never sees it. Check
+  https://github.com/just-containers/s6-overlay/releases periodically and bump the `ARG` by hand if needed.
 - **No app code is vendored.** `Dockerfile.noble`/`.alpine`/`.slim` pull Predbat straight from GitHub with
   Docker's `ADD https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ ...` syntax —
   changing `PREDBAT_VERSION` and rebuilding is how the app itself gets updated, not editing files in this repo.
