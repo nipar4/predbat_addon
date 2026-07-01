@@ -79,6 +79,7 @@ jobs:
             git add versions.env
             git commit -m "chore: bump addon version to ${{ steps.addon_version.outputs.tag }}"
           fi
+          git pull --rebase
           git push origin main
 
       - name: Trigger predbat sync build
