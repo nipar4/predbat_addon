@@ -43,12 +43,19 @@ predbat/
     alpine/{startup.py,run.docker.sh,run.standalone.sh}  # shared by Dockerfile.alpine/.slim
     test/{startup.py,run.docker.sh,run.standalone.sh}     # a WIP/scratch variant, keep in sync manually
     config/{apps.yaml,secrets.yaml}        # template config copied into /config on first boot
-    docker/s6-rc/                           # s6 service definitions used by alpine/slim images:
+    docker/s6-rc/                           # s6 service definitions used ONLY by Dockerfile.alpine/.slim:
       predbat/                                # main "predbat" service (runs after wait-for-ha)
       wait-for-ha/                             # optional service that polls HA and can force-restart the container
-    etc/s6-overlay/s6-rc.d/                    # older/alternate s6 service tree (init-predbat) — check before assuming unused
+    etc/s6-overlay/s6-rc.d/                    # s6 service (init-predbat) used by the HAOS add-on image: Dockerfile
+                                                # does `ADD rootfs requirements.txt /`, which lands this at
+                                                # /etc/s6-overlay/s6-rc.d/ where the HAOS base image's s6-overlay
+                                                # picks it up — this is the primary Supervisor-install entrypoint,
+                                                # not legacy/unused
 .github/workflows/
-  sync-predbat.yml           # hourly: checks upstream batpred releases, bumps PREDBAT_VERSION, builds+pushes all 3 image variants, cuts a GitHub release
+  sync-predbat.yml           # hourly: checks upstream batpred releases and bumps PREDBAT_VERSION unconditionally, but only
+                               # builds+pushes all 3 image variants and cuts a GitHub release if ADDON_VERSION is already
+                               # current with upstream predbat_addon (addon_current) AND either the version changed or the
+                               # run was triggered by sync-addon.yml's push — otherwise the bump lands with no build
   sync-addon.yml              # daily: merges upstream springfall2008/predbat_addon main, bumps ADDON_VERSION, triggers sync-predbat.yml
   docker-image.yml               # manual-dispatch-only build+push of all 3 variants (superseded by sync-predbat.yml's build job, kept for manual builds)
   lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push and PR
@@ -73,10 +80,17 @@ predbat/
   needs `actions: write`, `softprops/action-gh-release` needs `contents: write`), the job's `permissions:`
   block must explicitly list it or the step silently 403s. `sync-addon.yml`'s `check-and-merge` job hit this
   exact bug (missing `actions: write` for its "Trigger predbat sync build" step) before it was fixed.
-- `sync-addon.yml`'s conflict handling is split into two issue-filing steps: one gated on
-  `steps.merge.outputs.conflict == 'true'` (an actual `git merge` conflict, with resolution instructions),
-  and a separate one for any other failure (e.g. a flaky upstream API fetch) so the filed issue doesn't
-  misdiagnose the cause.
+- **Issues are intentionally disabled on this fork** — user-facing bug reports should go to upstream
+  `springfall2008/predbat_addon`/`batpred`, not here. `sync-addon.yml` has no issue-filing steps for merge
+  conflicts or other failures; a failed scheduled run just relies on GitHub's default failed-workflow email
+  notification. Don't reintroduce `github.rest.issues.create()` calls in this repo's workflows — they'll
+  fail with `HttpError: Issues has been disabled in this repository.`
+- **`gh workflow run` needs an explicit `-R <owner>/<repo>` when the job has more than one GitHub remote
+  configured.** `sync-addon.yml`'s `check-and-merge` job adds an `upstream` remote (pointing at
+  `springfall2008/predbat_addon`) to merge from it, which confuses `gh`'s repo auto-detection — its
+  "Trigger predbat sync build" step (`gh workflow run sync-predbat.yml`) once silently dispatched against
+  `springfall2008/predbat_addon` instead of the fork and failed with `HTTP 404: workflow ... not found on
+  the default branch`. Always pass `-R ${{ github.repository }}` explicitly in that job.
 
 ## Key mechanics worth understanding before editing
 
@@ -99,10 +113,13 @@ predbat/
   changing `PREDBAT_VERSION` and rebuilding is how the app itself gets updated, not editing files in this repo.
 - **Startup flow (alpine/slim, s6-based):** `wait-for-ha` service (optional, only if `WAIT_FOR_HA_HOST`/`_PORT`
   env vars are set) polls Home Assistant over TCP and force-restarts the container via
-  `s6-linux-init-shutdown -r now` after `WAIT_FOR_HA_MAX_FAILS` consecutive failures, then the `predbat`
-  service runs `rootfs/alpine/run.docker.sh` → `rootfs/alpine/startup.py`, which copies `apps.yaml` into
-  `/config` on first run, blocks until the user removes `template: true` from it, then execs
-  `python3 /addon/hass.py`.
+  `s6-linux-init-shutdown -r now` after `WAIT_FOR_HA_MAX_FAILS` consecutive failures. The `predbat` service
+  depends on it and does its own separate initial wait for HA to become reachable, then execs
+  `rootfs/alpine/run.docker.sh` — **not** `startup.py` — which copies `apps.yaml` into `/config` on first
+  run and blocks until the user removes `template: true` from it, then execs `python3 /addon/startup.py`.
+  `startup.py`'s own logic is mostly a fallback that re-downloads a Predbat release zip from GitHub if
+  `apps.yaml` is missing (dead code on this path, since `run.docker.sh` already guarantees it exists) —
+  it finishes by running `python3 /addon/hass.py` via `os.system` (not `exec`), then sleeps 20s.
 - **Multiple near-duplicate startup scripts exist** (`rootfs/{addon,noble,alpine,test}/startup.py` and the
   various `run*.sh`). They differ subtly (e.g. `hass.py` vs `/addon/hass.py`, `template: True` vs
   `template: true` casing, restart-loop vs single-shot). When fixing a bug in one, check whether the same
