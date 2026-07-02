@@ -60,7 +60,7 @@ USER root
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends netcat-openbsd ca-certificates wget; \
+    apt-get install -y --no-install-recommends netcat-openbsd ca-certificates; \
     groupadd -g ${GID} ${USER_GROUP}; \
     useradd -u ${UID} -g ${GID} -m -s /bin/bash ${USER_NAME}; \
     chown -R ${USER_NAME} /config; \
