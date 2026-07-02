@@ -26,6 +26,8 @@ and, where possible, a local `docker build`, rather than looking for a test suit
 ```
 versions.env              # single source of truth for PREDBAT_VERSION / ADDON_VERSION
 repository.yaml            # HA add-on repository metadata
+archive/                   # files pulled out of the build tree because nothing references them anymore,
+                             # kept (not deleted) in case that turns out to be wrong — see each subdir's README
 predbat/
   config.yaml               # HA add-on manifest (slug, ports, options schema, version) — synced from upstream, not fork-maintained
   build.yaml                 # base images per arch for the HAOS add-on build — synced from upstream, not fork-maintained
@@ -42,7 +44,6 @@ predbat/
     noble/{startup.py,run.standalone.sh}   # Dockerfile.noble entrypoint
     alpine/{startup.py,run.docker.sh,run.standalone.sh}  # shared by Dockerfile.alpine/.slim
     test/{startup.py,run.docker.sh,run.standalone.sh}     # a WIP/scratch variant, keep in sync manually
-    config/{apps.yaml,secrets.yaml}        # template config copied into /config on first boot
     docker/s6-rc/                           # s6 service definitions used ONLY by Dockerfile.alpine/.slim:
       predbat/                                # main "predbat" service (runs after wait-for-ha)
       wait-for-ha/                             # optional service that polls HA and can force-restart the container
