@@ -35,9 +35,7 @@ jobs:
       - name: Detect if update available
         id: check
         run: |
-          LOCAL=$(git rev-parse main)
-          REMOTE=$(git rev-parse upstream/main)
-          if [ "$LOCAL" = "$REMOTE" ]; then
+          if git merge-base --is-ancestor upstream/main main; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"

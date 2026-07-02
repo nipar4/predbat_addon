@@ -91,6 +91,17 @@ predbat/
   "Trigger predbat sync build" step (`gh workflow run sync-predbat.yml`) once silently dispatched against
   `springfall2008/predbat_addon` instead of the fork and failed with `HTTP 404: workflow ... not found on
   the default branch`. Always pass `-R ${{ github.repository }}` explicitly in that job.
+- **`sync-addon.yml`'s "Detect if update available" step must check ancestry, not SHA equality.** This fork
+  is permanently ahead of `springfall2008/predbat_addon` (it carries its own commits — `versions.env` bumps,
+  `CLAUDE.md`, workflow fixes — that never merge back upstream), so a plain `git rev-parse main` vs.
+  `git rev-parse upstream/main` comparison is essentially always unequal and reports `changed=true` on
+  nearly every run, even when upstream added nothing. Since `changed=true` unconditionally triggers
+  `gh workflow run sync-predbat.yml`, and that dispatch's `workflow_dispatch` event bypasses
+  `sync-predbat.yml`'s own `addon_current`/`version_changed` build gating, this caused a full image
+  build+push+release on every run regardless of whether anything actually changed — masked until the
+  `-R` fix above made the dispatch start succeeding. The check now uses
+  `git merge-base --is-ancestor upstream/main main` (true = upstream has no commits main doesn't already
+  have = no real update) instead.
 
 ## Key mechanics worth understanding before editing
 
