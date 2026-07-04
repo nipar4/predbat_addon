@@ -56,9 +56,10 @@ predbat/
   sync-predbat.yml           # hourly: checks upstream batpred releases and bumps PREDBAT_VERSION unconditionally, but only
                                # builds+pushes all 3 image variants and cuts a GitHub release if ADDON_VERSION is already
                                # current with upstream predbat_addon (addon_current) AND either the version changed or the
-                               # run was triggered by sync-addon.yml's push — otherwise the bump lands with no build
+                               # run was triggered by sync-addon.yml's push — otherwise the bump lands with no build.
+                               # A manual workflow_dispatch bypasses all of that gating and always builds+pushes+releases,
+                               # so this is also the way to force a rebuild of the current versions.env on demand.
   sync-addon.yml              # daily: merges upstream springfall2008/predbat_addon main, bumps ADDON_VERSION, triggers sync-predbat.yml
-  docker-image.yml               # manual-dispatch-only build+push of all 3 variants (superseded by sync-predbat.yml's build job, kept for manual builds)
   lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push and PR
   dependabot.yml
 ```
@@ -117,7 +118,7 @@ predbat/
   `RUN`/`ADD` download URL rather than a `FROM` line, so Dependabot's `docker` ecosystem (which only parses
   `FROM image:tag`, or an `ARG` with a literal default feeding a `FROM`) never sees it. It lives in
   `versions.env` (same as `PREDBAT_VERSION`/`ADDON_VERSION`) and is passed through as a build-arg by
-  `sync-predbat.yml`/`docker-image.yml`, so there's one place to bump it by hand — the Dockerfiles' own
+  `sync-predbat.yml`, so there's one place to bump it by hand — the Dockerfiles' own
   `ARG S6_VERSION=v3.2.2.0` default is only a fallback for building without CI/`versions.env` and should be
   kept in sync manually if bumped. Check https://github.com/just-containers/s6-overlay/releases periodically.
 - **No app code is vendored.** `Dockerfile.noble`/`.alpine`/`.slim` pull Predbat straight from GitHub with
