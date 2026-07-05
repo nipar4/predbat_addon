@@ -1,4 +1,5 @@
 #!/command/with-contenv /bin/sh
+# shellcheck shell=sh
 set -eu
 
 # Ensure variables exist to prevent unbound-variable errors
