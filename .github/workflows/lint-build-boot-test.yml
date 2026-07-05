@@ -1,0 +1,129 @@
+name: Lint, Build & Boot Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint Dockerfiles & scripts (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [alpine, noble, slim]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Hadolint - Dockerfile.${{ matrix.variant }}
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: predbat/Dockerfile.${{ matrix.variant }}
+
+      - name: Shellcheck rootfs scripts
+        run: |
+          shopt -s globstar nullglob
+          files=(predbat/**/*.sh)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts found, skipping"
+            exit 0
+          fi
+          shellcheck "${files[@]}"
+
+  build-and-boot:
+    name: Build & boot test (${{ matrix.variant }} / ${{ matrix.platform }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [alpine, noble, slim]
+        platform: [linux/amd64, linux/arm64]
+        include:
+          # linux/arm64 runs under QEMU emulation on these amd64 runners, so
+          # Predbat's startup takes much longer to reach the config-check prompt.
+          - platform: linux/amd64
+            boot_timeout: 90
+          - platform: linux/arm64
+            boot_timeout: 240
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Read versions.env
+        id: versions
+        run: |
+          source versions.env
+          echo "predbat_version=$(echo "$PREDBAT_VERSION" | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+          echo "addon_version=$(echo "$ADDON_VERSION" | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+          echo "s6_version=$(echo "$S6_VERSION" | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./predbat/
+          file: ./predbat/Dockerfile.${{ matrix.variant }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: predbat-addon-test:${{ matrix.variant }}
+          build-args: |
+            PREDBAT_VERSION=${{ steps.versions.outputs.predbat_version }}
+            ADDON_VERSION=${{ steps.versions.outputs.addon_version }}
+            S6_VERSION=${{ steps.versions.outputs.s6_version }}
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }},mode=max
+
+      - name: Boot test
+        run: |
+          set -e
+          CONTAINER_ID=$(docker run -d --platform ${{ matrix.platform }} predbat-addon-test:${{ matrix.variant }})
+          # All variants copy the template apps.yaml on first boot and block
+          # with an "update apps.yaml" prompt until it's edited - that prompt
+          # is what proves the entrypoint made it through startup without
+          # crashing (there's no s6-overlay on the noble variant, so its
+          # presence can't be used as a cross-variant signal).
+          TIMEOUT=${{ matrix.boot_timeout }}
+          ELAPSED=0
+          FOUND=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_ID")" != "true" ]; then
+              echo "::error::Container exited early for ${{ matrix.variant }} / ${{ matrix.platform }}"
+              docker logs "$CONTAINER_ID"
+              exit 1
+            fi
+            if docker logs "$CONTAINER_ID" 2>&1 | grep -qi "update apps.yaml"; then
+              FOUND=1
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::Boot test failed for ${{ matrix.variant }} / ${{ matrix.platform }} — apps.yaml prompt not seen within ${TIMEOUT}s"
+            echo "--- Container logs ---"
+            docker logs "$CONTAINER_ID"
+            docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+          echo "Boot test passed for ${{ matrix.variant }} / ${{ matrix.platform }}"
+          docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true
