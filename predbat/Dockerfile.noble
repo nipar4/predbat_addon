@@ -38,6 +38,10 @@ COPY --chown=${USER_NAME} rootfs/noble/* /addon/
 #COPY --chown=${USER_NAME} ha.py /addon
 # Make the startup script executable
 RUN chmod +x /addon/run.standalone.sh
+# Stays root deliberately: the predbat user/group (UID/GID overridable via
+# build args) exists for users to opt into via `docker run --user`, but
+# defaulting to non-root here would break existing installs whose mounted
+# /config ownership doesn't match
 # hadolint ignore=DL3002
 USER root
 

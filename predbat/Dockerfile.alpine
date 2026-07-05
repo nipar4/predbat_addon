@@ -56,6 +56,10 @@ ARG BUILD_DATE
 ARG ADDON_VERSION
 
 WORKDIR /config
+# Stays root deliberately: the predbat user/group (UID/GID overridable via
+# build args) exists for users to opt into via `docker run --user`, but
+# defaulting to non-root here would break existing installs whose mounted
+# /config ownership doesn't match
 # hadolint ignore=DL3002
 USER root
 
