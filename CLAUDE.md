@@ -63,6 +63,16 @@ predbat/
                                # own push), and the way to force a rebuild of the current versions.env on demand.
   sync-addon.yml              # daily: merges upstream springfall2008/predbat_addon main, bumps ADDON_VERSION, triggers sync-predbat.yml
   lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push and PR
+  lint-build-boot-test.yml        # on push/PR touching predbat/Dockerfile.{alpine,noble,slim}, predbat/rootfs/**,
+                                    # predbat/requirements.txt, or versions.env: hadolint + shellcheck, then a real
+                                    # docker buildx build (linux/amd64 and linux/arm64, arm64 under QEMU emulation,
+                                    # load: true/push: false so nothing reaches Docker Hub) for each of those 3
+                                    # variants, then boots each image and waits for the "update apps.yaml" prompt in
+                                    # its logs as proof the entrypoint started cleanly. Does NOT cover Dockerfile,
+                                    # Dockerfile.old, or Dockerfile.standalone - adding a new Dockerfile variant needs
+                                    # its own entries added to this workflow's `matrix.variant` list (both jobs) and
+                                    # to its `on.pull_request.paths`/`on.push.paths` anchor before it gets any
+                                    # automated lint/build/boot coverage; it isn't picked up automatically.
   dependabot.yml
 ```
 
