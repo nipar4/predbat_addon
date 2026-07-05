@@ -55,10 +55,12 @@ predbat/
 .github/workflows/
   sync-predbat.yml           # hourly: checks upstream batpred releases and bumps PREDBAT_VERSION unconditionally, but only
                                # builds+pushes all 3 image variants and cuts a GitHub release if ADDON_VERSION is already
-                               # current with upstream predbat_addon (addon_current) AND either the version changed or the
-                               # run was triggered by sync-addon.yml's push — otherwise the bump lands with no build.
-                               # A manual workflow_dispatch bypasses all of that gating and always builds+pushes+releases,
-                               # so this is also the way to force a rebuild of the current versions.env on demand.
+                               # current with upstream predbat_addon (addon_current) AND PREDBAT_VERSION actually changed —
+                               # otherwise the bump (or an unrelated versions.env edit, e.g. an S6_VERSION bump) lands with
+                               # no build. A manual workflow_dispatch bypasses all of that gating and always builds+pushes+
+                               # releases — this is also how sync-addon.yml requests a rebuild after merging upstream (it
+                               # calls `gh workflow run sync-predbat.yml`, a workflow_dispatch, rather than relying on its
+                               # own push), and the way to force a rebuild of the current versions.env on demand.
   sync-addon.yml              # daily: merges upstream springfall2008/predbat_addon main, bumps ADDON_VERSION, triggers sync-predbat.yml
   lint-workflows.yml              # runs actionlint against .github/workflows/*.yml on push and PR
   dependabot.yml

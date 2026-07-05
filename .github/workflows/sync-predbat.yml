@@ -26,7 +26,6 @@ jobs:
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
       s6_version: ${{ steps.s6_version.outputs.s6_version }}
       commit_sha: ${{ steps.push.outputs.sha }}
-      addon_triggered: ${{ steps.trigger.outputs.addon_triggered }}
       addon_current: ${{ steps.addon_check.outputs.addon_current }}
 
     steps:
@@ -34,15 +33,6 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-
-      - name: Detect trigger source
-        id: trigger
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "addon_triggered=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "addon_triggered=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Get latest upstream release tag
         id: upstream
@@ -131,7 +121,7 @@ jobs:
 
   build:
     needs: check-and-sync
-    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && (needs.check-and-sync.outputs.version_changed == 'true' || needs.check-and-sync.outputs.addon_triggered == 'true'))
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && needs.check-and-sync.outputs.version_changed == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -206,7 +196,7 @@ jobs:
 
   release:
     needs: [check-and-sync, build]
-    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && (needs.check-and-sync.outputs.version_changed == 'true' || needs.check-and-sync.outputs.addon_triggered == 'true'))
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && needs.check-and-sync.outputs.version_changed == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write
