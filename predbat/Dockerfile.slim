@@ -8,6 +8,7 @@ WORKDIR /install
 
 COPY requirements.txt /
 
+# hadolint ignore=DL3008
 RUN set -eux; \
     apt-get update; \
     apt-get install --yes --no-install-recommends gcc g++ libffi-dev; \
@@ -23,6 +24,7 @@ ARG TARGETARCH
 
 WORKDIR /tmp/s6
 
+# hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates xz-utils
 
@@ -56,13 +58,15 @@ ARG BUILD_DATE
 ARG ADDON_VERSION
 
 WORKDIR /config
+# hadolint ignore=DL3002
 USER root
 
+# hadolint ignore=DL3008
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends netcat-openbsd ca-certificates; \
     groupadd -g ${GID} ${USER_GROUP}; \
-    useradd -u ${UID} -g ${GID} -m -s /bin/bash ${USER_NAME}; \
+    useradd -l -u ${UID} -g ${GID} -m -s /bin/bash ${USER_NAME}; \
     chown -R ${USER_NAME} /config; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
@@ -71,11 +75,12 @@ RUN set -eux; \
 COPY --from=s6-builder /s6-root/ /
 COPY --from=builder /install /usr/local/
 
+# App files - Predbat itself is fetched straight from GitHub, never vendored
 ADD --chown=${USER_NAME} \
   https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ \
   https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ \
-  rootfs/alpine/* \
   /addon/
+COPY --chown=${USER_NAME} rootfs/alpine/* /addon/
 
 COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/
 

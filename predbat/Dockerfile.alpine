@@ -8,6 +8,7 @@ WORKDIR /install
 
 COPY requirements.txt /
 
+# hadolint ignore=DL3018
 RUN set -eux; \
     apk add --no-cache --virtual .build-deps gcc g++ libffi-dev musl-dev; \
     pip install --no-cache-dir --prefix=/install -r /requirements.txt
@@ -22,6 +23,7 @@ ARG TARGETARCH
 
 WORKDIR /tmp/s6
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates xz
 
 ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-noarch.tar.xz .
@@ -54,8 +56,10 @@ ARG BUILD_DATE
 ARG ADDON_VERSION
 
 WORKDIR /config
+# hadolint ignore=DL3002
 USER root
 
+# hadolint ignore=DL3018
 RUN set -eux; \
     apk add --no-cache netcat-openbsd; \
     addgroup -S -g ${GID} ${USER_GROUP}; \
@@ -68,12 +72,12 @@ COPY --from=s6-builder /s6-root/ /
 # Python deps
 COPY --from=builder /install /usr/local/
 
-# App files
+# App files - Predbat itself is fetched straight from GitHub, never vendored
 ADD --chown=${USER_NAME} \
     https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ \
     https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ \
-    rootfs/alpine/* \
     /addon/
+COPY --chown=${USER_NAME} rootfs/alpine/* /addon/
 
 # s6 service definitions
 COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/

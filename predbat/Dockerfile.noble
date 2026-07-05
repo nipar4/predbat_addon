@@ -1,4 +1,6 @@
-# Use the official Ubuntu image
+# Use the official Ubuntu image - deliberately tracks :latest (unlike
+# alpine/slim's pinned BASE_IMAGE) to pick up Ubuntu's own security patches
+# hadolint ignore=DL3007
 FROM ubuntu:latest
 ARG USER_NAME="predbat"
 ARG USER_GROUP="predbat"
@@ -14,26 +16,29 @@ WORKDIR /addon
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY requirements.txt /
+# hadolint ignore=DL3005,DL3008
 RUN apt-get update && apt-get upgrade -y && \
     apt-get dist-upgrade -y && \
     apt-get update && apt-get install -y --no-install-recommends python3-minimal libffi-dev && \
     #build-essential
-    apt-get install -y python3-pip && \
-    pip install --break-system-packages -r /requirements.txt && \
+    apt-get install -y --no-install-recommends python3-pip && \
+    pip install --no-cache-dir --break-system-packages -r /requirements.txt && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /config
 RUN groupadd -g ${GID} ${USER_GROUP} \
-    && useradd -u ${UID} -g ${GID} ${USER_NAME} \
+    && useradd -l -u ${UID} -g ${GID} ${USER_NAME} \
     && chown -R ${USER_NAME} /config
-# Copy the rootfs directory to /addon
-ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ rootfs/noble/* /addon/
+# Copy the rootfs directory to /addon - Predbat itself is fetched straight from GitHub, never vendored
+ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ /addon/
+COPY --chown=${USER_NAME} rootfs/noble/* /addon/
 #ADD https://github.com/springfall2008/batpred.git#main:apps/predbat/ https://github.com/springfall2008/batpred.git#main:apps/predbat/config/ rootfs/noble/* /addon/
 #COPY --chown=${USER_NAME} ha.py /addon
 # Make the startup script executable
 RUN chmod +x /addon/run.standalone.sh
+# hadolint ignore=DL3002
 USER root
 
 # Define build arguments and labels
