@@ -2,8 +2,17 @@ name: Lint, Build & Boot Test
 
 on:
   pull_request:
+    paths: &paths
+      - 'predbat/Dockerfile.alpine'
+      - 'predbat/Dockerfile.noble'
+      - 'predbat/Dockerfile.slim'
+      - 'predbat/rootfs/**'
+      - 'predbat/requirements.txt'
+      - 'versions.env'
+      - '.github/workflows/lint-build-boot-test.yml'
   push:
     branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
