@@ -68,11 +68,22 @@ predbat/
                                     # docker buildx build (linux/amd64 and linux/arm64, arm64 under QEMU emulation,
                                     # load: true/push: false so nothing reaches Docker Hub) for each of those 3
                                     # variants, then boots each image and waits for the "update apps.yaml" prompt in
-                                    # its logs as proof the entrypoint started cleanly. Does NOT cover Dockerfile,
-                                    # Dockerfile.old, or Dockerfile.standalone - adding a new Dockerfile variant needs
-                                    # its own entries added to this workflow's `matrix.variant` list (both jobs) and
-                                    # to its `on.pull_request.paths`/`on.push.paths` anchor before it gets any
-                                    # automated lint/build/boot coverage; it isn't picked up automatically.
+                                    # its logs as proof the entrypoint started cleanly.
+                                    #
+                                    # IMPORTANT: this workflow only tests Dockerfile.alpine, Dockerfile.noble, and
+                                    # Dockerfile.slim. It does NOT test Dockerfile, Dockerfile.old, or
+                                    # Dockerfile.standalone, and it will NOT automatically start testing any brand
+                                    # new Dockerfile.<something> you add to predbat/ - a new Dockerfile gets zero
+                                    # CI coverage until you manually edit this workflow file to add it. Concretely,
+                                    # to add coverage for a new variant, open .github/workflows/lint-build-boot-test.yml
+                                    # and: (1) add the new file's path (e.g. 'predbat/Dockerfile.myvariant') to the
+                                    # paths: list near the top of the file, under `on:` - it's written once and
+                                    # shared between the pull_request and push triggers via a YAML anchor
+                                    # (`&paths`/`*paths`), so you only need to add it in that one list; (2) add a
+                                    # new entry for the variant name to the `variant:` list inside `strategy: matrix:`
+                                    # in BOTH the `lint` job and the `build-and-boot` job further down the file.
+                                    # Forgetting either step doesn't cause an error - the new Dockerfile just silently
+                                    # never gets linted, built, or boot-tested by CI.
   dependabot.yml
 ```
 
