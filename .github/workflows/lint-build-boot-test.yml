@@ -1,6 +1,7 @@
 name: Lint, Build & Boot Test
 
 on:
+  # &paths/*paths keeps the pull_request and push trigger lists in sync
   pull_request:
     paths: &paths
       - 'predbat/Dockerfile.alpine'
