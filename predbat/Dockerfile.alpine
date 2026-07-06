@@ -65,7 +65,7 @@ USER root
 
 # hadolint ignore=DL3018
 RUN set -eux; \
-    apk add --no-cache netcat-openbsd; \
+    apk add --no-cache gcompat netcat-openbsd; \
     addgroup -S -g ${GID} ${USER_GROUP}; \
     adduser -D -u ${UID} -G ${USER_GROUP} ${USER_NAME}; \
     chown -R ${USER_NAME} /config
