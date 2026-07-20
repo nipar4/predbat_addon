@@ -1,0 +1,33 @@
+#!/bin/sh
+# Mirrors .github/workflows/lint-workflows.yml locally, before push, so a broken
+# workflow file is caught here instead of ~15s into a CI run. Runs actionlint via
+# the same pinned version lint-workflows.yml downloads, using the rhysd/actionlint
+# Docker image specifically because it bundles shellcheck - actionlint also lints
+# the shell in every workflow's inline `run:` blocks, and without shellcheck on
+# PATH that check silently gets skipped (this bit us for real: a run: block with
+# three separate `>> "$GITHUB_OUTPUT"` redirects passed locally with bare
+# actionlint, then failed in CI, because CI's runner has shellcheck preinstalled
+# and ours didn't).
+#
+# Enable with: git config core.hooksPath .githooks
+
+ACTIONLINT_VERSION="1.7.12"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "pre-push: docker not found, skipping local actionlint check (CI will still run it)" >&2
+  exit 0
+fi
+
+if ! ls .github/workflows/*.yml >/dev/null 2>&1; then
+  exit 0
+fi
+
+echo "pre-push: running actionlint (with shellcheck) against .github/workflows/*.yml - same check as CI's Lint Workflows job..."
+if ! docker run --rm -v "$(pwd):/repo" -w /repo "rhysd/actionlint:${ACTIONLINT_VERSION}" .github/workflows/*.yml; then
+  echo "" >&2
+  echo "pre-push: actionlint found issues above - fix them, or run 'git push --no-verify' to skip this check (CI will still catch it)." >&2
+  exit 1
+fi
+
+echo "pre-push: actionlint clean"
+exit 0

@@ -168,14 +168,20 @@ predbat/
 
 ## Working with GitHub Actions changes
 
-- Validate workflow YAML with `actionlint` locally before pushing (CI runs it on every push and PR touching
-  `.github/workflows/*.yml` via `lint-workflows.yml`, which downloads a specific checksum-verified
-  actionlint release rather than piping an unpinned installer script):
+- **A pre-push hook that mirrors `lint-workflows.yml` is checked in at `.githooks/pre-push`, but it is NOT
+  active until you opt in**, by running once per clone: `git config core.hooksPath .githooks`. After that,
+  every `git push` runs actionlint against `.github/workflows/*.yml` first and blocks the push if it finds
+  anything (bypass with `git push --no-verify` if you need to push anyway — CI will still catch it).
+- The hook runs actionlint via the `rhysd/actionlint` Docker image rather than a bare downloaded binary,
+  specifically because that image bundles `shellcheck`. This matters: actionlint also lints the shell in
+  every workflow's inline `run:` blocks, but silently skips that check if `shellcheck` isn't on `PATH` —
+  and it usually won't be on a fresh machine. This bit us for real: a `run:` block with three separate
+  `>> "$GITHUB_OUTPUT"` redirects passed a bare local `actionlint` run, then failed in CI, because CI's
+  `ubuntu-latest` runner has `shellcheck` preinstalled and the bare local binary silently didn't check it.
+  If you validate manually instead of via the hook, use the same Docker image so you're not fooled the
+  same way:
   ```bash
-  ACTIONLINT_VERSION="1.7.12"
-  curl -sSfLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-  tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
-  ./actionlint .github/workflows/*.yml
+  docker run --rm -v "$(pwd):/repo" -w /repo rhysd/actionlint:1.7.12 .github/workflows/*.yml
   ```
 - The build workflows require `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets and push multi-arch
   (`linux/amd64,linux/arm64`) images — don't expect a full build to succeed in a sandbox without those

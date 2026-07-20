@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(docker service logs *)",
+      "Bash(unzstd -c *)",
+      "Bash(git fetch *)",
+      "Bash(docker service ps *)",
+      "Bash(curl -s https://api.github.com/*)",
+      "Bash(docker service ls*)",
+      "Bash(docker service inspect *)",
+      "Bash(docker stack ls*)",
+      "Bash(curl -sS https://api.github.com/*)"
+    ]
+  }
+}
