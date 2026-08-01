@@ -172,17 +172,19 @@ predbat/
   active until you opt in**, by running once per clone: `git config core.hooksPath .githooks`. After that,
   every `git push` runs actionlint against `.github/workflows/*.yml` first and blocks the push if it finds
   anything (bypass with `git push --no-verify` if you need to push anyway — CI will still catch it).
-- The hook runs actionlint via the `rhysd/actionlint` Docker image rather than a bare downloaded binary,
-  specifically because that image bundles `shellcheck`. This matters: actionlint also lints the shell in
-  every workflow's inline `run:` blocks, but silently skips that check if `shellcheck` isn't on `PATH` —
-  and it usually won't be on a fresh machine. This bit us for real: a `run:` block with three separate
-  `>> "$GITHUB_OUTPUT"` redirects passed a bare local `actionlint` run, then failed in CI, because CI's
-  `ubuntu-latest` runner has `shellcheck` preinstalled and the bare local binary silently didn't check it.
-  If you validate manually instead of via the hook, use the same Docker image so you're not fooled the
-  same way:
-  ```bash
-  docker run --rm -v "$(pwd):/repo" -w /repo rhysd/actionlint:1.7.12 .github/workflows/*.yml
-  ```
+- The hook downloads its own pinned, checksum-verified `actionlint` and `shellcheck` binaries (cached under
+  `~/.cache/predbat-addon-hooks/`) rather than relying on whatever's on the dev machine's `PATH` or requiring
+  Docker — it needs no root and no Docker engine, so it works the same on any Linux box, including one with
+  no Docker installed at all (this repo doesn't only live on Docker hosts). This matters because actionlint
+  also lints the shell in every workflow's inline `run:` blocks via `shellcheck`, but silently skips that
+  check if `shellcheck` isn't found — and it usually won't be on a fresh machine. This bit us for real once:
+  a `run:` block with three separate `>> "$GITHUB_OUTPUT"` redirects passed a bare local `actionlint` run
+  with no `shellcheck` on `PATH`, then failed in CI, because CI's `ubuntu-latest` runner has `shellcheck`
+  preinstalled. Bundling a pinned `shellcheck` binary alongside `actionlint` in the hook (rather than
+  depending on Docker, which was the first fix for this) closes that gap unconditionally instead of
+  depending on what happens to already be installed. If you validate manually instead of via the hook, the
+  hook itself is the reference — run `.githooks/pre-push` directly, or reuse its cached binaries at
+  `~/.cache/predbat-addon-hooks/bin/`.
 - The build workflows require `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets and push multi-arch
   (`linux/amd64,linux/arm64`) images — don't expect a full build to succeed in a sandbox without those
   secrets and QEMU/buildx set up.

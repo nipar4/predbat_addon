@@ -1,29 +1,110 @@
 #!/bin/sh
 # Mirrors .github/workflows/lint-workflows.yml locally, before push, so a broken
-# workflow file is caught here instead of ~15s into a CI run. Runs actionlint via
-# the same pinned version lint-workflows.yml downloads, using the rhysd/actionlint
-# Docker image specifically because it bundles shellcheck - actionlint also lints
-# the shell in every workflow's inline `run:` blocks, and without shellcheck on
-# PATH that check silently gets skipped (this bit us for real: a run: block with
-# three separate `>> "$GITHUB_OUTPUT"` redirects passed locally with bare
-# actionlint, then failed in CI, because CI's runner has shellcheck preinstalled
-# and ours didn't).
+# workflow file is caught here instead of ~15s into a CI run.
+#
+# Downloads the same pinned, checksum-verified actionlint binary that CI itself
+# downloads (see ACTIONLINT_VERSION/ACTIONLINT_SHA256_* below - keep in sync with
+# lint-workflows.yml) plus a pinned shellcheck binary, both cached under
+# ~/.cache/predbat-addon-hooks/ so repeat pushes don't re-download. No Docker and
+# no root required - this runs the same way on any Linux dev box, including ones
+# with no Docker engine installed.
+#
+# actionlint shells out to `shellcheck` (if found on PATH) to lint the shell in
+# every workflow's inline `run:` blocks - without it, that check is silently
+# skipped. This bit us for real once: a run: block with three separate
+# `>> "$GITHUB_OUTPUT"` redirects passed locally (no shellcheck on PATH), then
+# failed in CI (CI's runner has shellcheck preinstalled). Bundling our own pinned
+# shellcheck binary here closes that gap instead of relying on what happens to be
+# installed on the dev machine.
 #
 # Enable with: git config core.hooksPath .githooks
 
-ACTIONLINT_VERSION="1.7.12"
+set -e
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "pre-push: docker not found, skipping local actionlint check (CI will still run it)" >&2
-  exit 0
-fi
+ACTIONLINT_VERSION="1.7.12"
+ACTIONLINT_SHA256_AMD64="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+ACTIONLINT_SHA256_ARM64="325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
+
+SHELLCHECK_VERSION="0.9.0"
+SHELLCHECK_SHA256_AMD64="700324c6dd0ebea0117591c6cc9d7350d9c7c5c287acbad7630fa17b1d4d9e2f"
+SHELLCHECK_SHA256_ARM64="179c579ef3481317d130adebede74a34dbbc2df961a70916dd4039ebf0735fae"
+
+CACHE_DIR="${HOME}/.cache/predbat-addon-hooks"
+BIN_DIR="${CACHE_DIR}/bin"
 
 if ! ls .github/workflows/*.yml >/dev/null 2>&1; then
   exit 0
 fi
 
+if ! command -v curl >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; then
+  echo "pre-push: curl/tar/sha256sum not found, skipping local actionlint check (CI will still run it)" >&2
+  exit 0
+fi
+
+case "$(uname -m)" in
+  x86_64|amd64)
+    ARCH_AL="amd64"; ARCH_SC="x86_64"
+    ACTIONLINT_SHA256="$ACTIONLINT_SHA256_AMD64"
+    SHELLCHECK_SHA256="$SHELLCHECK_SHA256_AMD64"
+    ;;
+  aarch64|arm64)
+    ARCH_AL="arm64"; ARCH_SC="aarch64"
+    ACTIONLINT_SHA256="$ACTIONLINT_SHA256_ARM64"
+    SHELLCHECK_SHA256="$SHELLCHECK_SHA256_ARM64"
+    ;;
+  *)
+    echo "pre-push: unsupported arch $(uname -m), skipping local actionlint check (CI will still run it)" >&2
+    exit 0
+    ;;
+esac
+
+fetch() {
+  # fetch <bin-name> <cached-version-file> <pinned-version> <url> <sha256> <tar-flags> <member-to-extract>
+  name="$1"; version_file="$2"; pinned_version="$3"; url="$4"; sha256="$5"; tar_flags="$6"; member="$7"
+
+  if [ -f "${BIN_DIR}/${name}" ] && [ "$(cat "$version_file" 2>/dev/null)" = "$pinned_version" ]; then
+    return 0
+  fi
+
+  mkdir -p "$BIN_DIR"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+
+  archive="${tmp}/${name}.tar"
+  if ! curl -sSfL "$url" -o "$archive"; then
+    echo "pre-push: failed to download ${name}, skipping local actionlint check (CI will still run it)" >&2
+    rm -rf "$tmp"
+    trap - EXIT
+    return 1
+  fi
+
+  if ! echo "${sha256}  ${archive}" | sha256sum -c - >/dev/null 2>&1; then
+    echo "pre-push: checksum mismatch downloading ${name}, skipping local actionlint check (CI will still run it)" >&2
+    rm -rf "$tmp"
+    trap - EXIT
+    return 1
+  fi
+
+  # shellcheck disable=SC2086
+  tar $tar_flags "$archive" -C "$tmp" $member
+  mv "${tmp}/${member}" "${BIN_DIR}/${name}"
+  chmod +x "${BIN_DIR}/${name}"
+  echo "$pinned_version" > "$version_file"
+
+  rm -rf "$tmp"
+  trap - EXIT
+}
+
+fetch actionlint "${CACHE_DIR}/actionlint.version" "$ACTIONLINT_VERSION" \
+  "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${ARCH_AL}.tar.gz" \
+  "$ACTIONLINT_SHA256" "xzf" "actionlint" || exit 0
+
+fetch shellcheck "${CACHE_DIR}/shellcheck.version" "$SHELLCHECK_VERSION" \
+  "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${ARCH_SC}.tar.xz" \
+  "$SHELLCHECK_SHA256" "xJf" "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" || exit 0
+
 echo "pre-push: running actionlint (with shellcheck) against .github/workflows/*.yml - same check as CI's Lint Workflows job..."
-if ! docker run --rm -v "$(pwd):/repo" -w /repo "rhysd/actionlint:${ACTIONLINT_VERSION}" .github/workflows/*.yml; then
+if ! PATH="${BIN_DIR}:${PATH}" "${BIN_DIR}/actionlint" .github/workflows/*.yml; then
   echo "" >&2
   echo "pre-push: actionlint found issues above - fix them, or run 'git push --no-verify' to skip this check (CI will still catch it)." >&2
   exit 1
