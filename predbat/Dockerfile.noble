@@ -42,7 +42,7 @@ RUN chmod +x /addon/run.standalone.sh
 # build args) exists for users to opt into via `docker run --user`, but
 # defaulting to non-root here would break existing installs whose mounted
 # /config ownership doesn't match
-# hadolint ignore=DL3002
+# hadolint ignore=DL3002,DL3066
 USER root
 
 # Define build arguments and labels

@@ -62,7 +62,7 @@ WORKDIR /config
 # build args) exists for users to opt into via `docker run --user`, but
 # defaulting to non-root here would break existing installs whose mounted
 # /config ownership doesn't match
-# hadolint ignore=DL3002
+# hadolint ignore=DL3002,DL3066
 USER root
 
 # hadolint ignore=DL3008
