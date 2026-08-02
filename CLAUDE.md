@@ -193,5 +193,16 @@ predbat/
 
 There's no test suite; the closest thing to validation is building an image, e.g.:
 ```bash
-docker build -f predbat/Dockerfile.alpine --build-arg PREDBAT_VERSION=v8.42.5 --build-arg ADDON_VERSION=1.7.1 predbat/
+docker build -f predbat/Dockerfile.alpine \
+  --build-arg PREDBAT_VERSION=v8.42.5 --build-arg ADDON_VERSION=1.7.1 --build-arg S6_VERSION=v3.2.3.2 \
+  predbat/
 ```
+**For `Dockerfile.alpine`/`.slim`, always pass `--build-arg S6_VERSION=...` explicitly (read the
+current pinned value from `versions.env`), even though the Dockerfile has its own `ARG
+S6_VERSION=v3.2.2.0` fallback.** Omitting it silently builds against that older fallback instead of
+the pinned version, and the two aren't equivalent for testing purposes — e.g. `user-bundles.d`
+support (see the s6-overlay changelog) was added in 3.2.3.2, so a locally-built image missing this
+flag can silently fail to start any service at all while looking otherwise fine, in a way CI (which
+does pass `S6_VERSION` from `versions.env`) won't catch or reproduce. This bit us for real: a manual
+verification build of an s6-overlay migration omitted the flag, giving a false pass on a service
+that was actually down.
