@@ -85,7 +85,6 @@ COPY --chown=${USER_NAME} rootfs/alpine/* /addon/
 
 # s6 service definitions
 COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/
-COPY rootfs/docker/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 
 # Define build arguments and labels
 LABEL \

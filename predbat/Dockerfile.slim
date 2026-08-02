@@ -87,7 +87,6 @@ ADD --chown=${USER_NAME} \
 COPY --chown=${USER_NAME} rootfs/alpine/* /addon/
 
 COPY rootfs/docker/s6-rc/ /etc/s6-overlay/s6-rc.d/
-COPY rootfs/docker/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 
 # Define build arguments and labels
 LABEL \
