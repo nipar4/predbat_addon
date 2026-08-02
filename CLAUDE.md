@@ -32,20 +32,29 @@ predbat/
   config.yaml               # HA add-on manifest (slug, ports, options schema, version) — synced from upstream, not fork-maintained
   build.yaml                 # base images per arch for the HAOS add-on build — synced from upstream, not fork-maintained
   Dockerfile                  # the actual HAOS add-on Dockerfile (BUILD_FROM from build.yaml) — synced from upstream, not fork-maintained
-  Dockerfile.old               # legacy Ubuntu-noble-based image with apt-installed python deps
   Dockerfile.noble               # ubuntu:latest based, fetches Predbat via `ADD <git-url>` — fork-original
   Dockerfile.alpine                # multi-stage: python:3.13-alpine + s6-overlay, fetches Predbat via `ADD <git-url>` — fork-original
   Dockerfile.slim                   # multi-stage: python:3.13-slim-bookworm + s6-overlay, same pattern as alpine — fork-original
-  Dockerfile.standalone              # standalone (non-HAOS) Dockerfile — synced from upstream, not fork-maintained
+  Dockerfile.standalone              # standalone (non-HAOS) Dockerfile — synced from upstream, not fork-maintained,
+                                       # and not part of this fork's build/release matrix (not built, tagged, or
+                                       # boot-tested by any workflow here)
   requirements.txt                    # Python deps installed into the image (independent of Predbat's own reqs)
   scripts/
     build-boot-test.sh                  # formal build+boot verification, shared by CI and local use — see
                                           # "Testing a Dockerfile change locally" below
   rootfs/                              # files copied/ADDed into images; several parallel variants exist:
-    startup.py, run.sh, run.csh          # used by Dockerfile / Dockerfile.old (legacy, non-s6 paths)
-    addon/{run.sh,startup.py}             # legacy HA add-on entrypoint
+    startup.py, run.sh                   # the LIVE entrypoint for the main HAOS Dockerfile — not legacy: landed by
+                                           # `ADD rootfs requirements.txt /`, then s6's init-predbat execs /run.sh,
+                                           # which execs `python3 /startup.py`
+    run.csh                               # only referenced by Dockerfile.standalone's CMD (upstream-owned, not part
+                                            # of this fork's build/release matrix)
+    addon/{run.sh,startup.py}             # legacy HA add-on entrypoint (root=/data) — superseded by the top-level
+                                            # run.sh/startup.py above; not referenced by any current Dockerfile
     noble/{startup.py,run.standalone.sh}   # Dockerfile.noble entrypoint
-    alpine/{startup.py,run.docker.sh,run.standalone.sh}  # shared by Dockerfile.alpine/.slim
+    alpine/{startup.py,run.docker.sh}      # shared by Dockerfile.alpine/.slim — run.docker.sh is what s6's predbat
+                                             # service execs; there used to also be an unused run.standalone.sh here
+                                             # (same shape as noble's but never wired to anything) - archived to
+                                             # archive/alpine-run-standalone/
     test/{startup.py,run.docker.sh,run.standalone.sh}     # a WIP/scratch variant, keep in sync manually
     docker/s6-rc/                           # s6 service definitions used ONLY by Dockerfile.alpine/.slim:
       predbat/                                # main "predbat" service (runs after wait-for-ha)
@@ -76,8 +85,8 @@ predbat/
                                     # s6-svstat) — see "Testing a Dockerfile change locally" below, same script.
                                     #
                                     # IMPORTANT: this workflow only tests Dockerfile.alpine, Dockerfile.noble, and
-                                    # Dockerfile.slim. It does NOT test Dockerfile, Dockerfile.old, or
-                                    # Dockerfile.standalone, and it will NOT automatically start testing any brand
+                                    # Dockerfile.slim. It does NOT test Dockerfile or Dockerfile.standalone (both
+                                    # upstream-synced), and it will NOT automatically start testing any brand
                                     # new Dockerfile.<something> you add to predbat/ - a new Dockerfile gets zero
                                     # CI coverage until you manually edit this workflow file to add it. Concretely,
                                     # to add coverage for a new variant, open .github/workflows/lint-build-boot-test.yml

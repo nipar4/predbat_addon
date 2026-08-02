@@ -16,13 +16,13 @@ else
     fi
 fi
 
-# Search for "template: True" in apps.yaml
+# Search for "template: true" in apps.yaml
 while true
 do
-    if grep -q "^[^#]*template: True" /config/apps.yaml; then
+    if grep -q "^[^#]*template: true" /config/apps.yaml; then
         echo "#################################################"
         echo "Please Update apps.yaml"
-        echo "Once updated please delete line 13 'template: True'"
+        echo "Once updated please delete line 13 'template: true'"
         echo "#################################################"
         sleep 30
     else
