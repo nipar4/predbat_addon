@@ -104,38 +104,7 @@ jobs:
 
       - name: Boot test
         run: |
-          set -e
-          CONTAINER_ID=$(docker run -d --platform ${{ matrix.platform }} predbat-addon-test:${{ matrix.variant }})
-          # All variants copy the template apps.yaml on first boot and block
-          # with an "update apps.yaml" prompt until it's edited - that prompt
-          # is what proves the entrypoint made it through startup without
-          # crashing (there's no s6-overlay on the noble variant, so its
-          # presence can't be used as a cross-variant signal).
-          TIMEOUT=${{ matrix.boot_timeout }}
-          ELAPSED=0
-          FOUND=0
-
-          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_ID")" != "true" ]; then
-              echo "::error::Container exited early for ${{ matrix.variant }} / ${{ matrix.platform }}"
-              docker logs "$CONTAINER_ID"
-              exit 1
-            fi
-            if docker logs "$CONTAINER_ID" 2>&1 | grep -qi "update apps.yaml"; then
-              FOUND=1
-              break
-            fi
-            sleep 2
-            ELAPSED=$((ELAPSED + 2))
-          done
-
-          if [ "$FOUND" -eq 0 ]; then
-            echo "::error::Boot test failed for ${{ matrix.variant }} / ${{ matrix.platform }} — apps.yaml prompt not seen within ${TIMEOUT}s"
-            echo "--- Container logs ---"
-            docker logs "$CONTAINER_ID"
-            docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true
-            exit 1
-          fi
-
-          echo "Boot test passed for ${{ matrix.variant }} / ${{ matrix.platform }}"
-          docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true
+          predbat/scripts/build-boot-test.sh ${{ matrix.variant }} \
+            --tag predbat-addon-test:${{ matrix.variant }} \
+            --platform ${{ matrix.platform }} \
+            --timeout ${{ matrix.boot_timeout }}

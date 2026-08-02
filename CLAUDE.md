@@ -38,6 +38,9 @@ predbat/
   Dockerfile.slim                   # multi-stage: python:3.13-slim-bookworm + s6-overlay, same pattern as alpine — fork-original
   Dockerfile.standalone              # standalone (non-HAOS) Dockerfile — synced from upstream, not fork-maintained
   requirements.txt                    # Python deps installed into the image (independent of Predbat's own reqs)
+  scripts/
+    build-boot-test.sh                  # formal build+boot verification, shared by CI and local use — see
+                                          # "Testing a Dockerfile change locally" below
   rootfs/                              # files copied/ADDed into images; several parallel variants exist:
     startup.py, run.sh, run.csh          # used by Dockerfile / Dockerfile.old (legacy, non-s6 paths)
     addon/{run.sh,startup.py}             # legacy HA add-on entrypoint
@@ -67,8 +70,10 @@ predbat/
                                     # predbat/requirements.txt, or versions.env: hadolint + shellcheck, then a real
                                     # docker buildx build (linux/amd64 and linux/arm64, arm64 under QEMU emulation,
                                     # load: true/push: false so nothing reaches Docker Hub) for each of those 3
-                                    # variants, then boots each image and waits for the "update apps.yaml" prompt in
-                                    # its logs as proof the entrypoint started cleanly.
+                                    # variants, then boot-tests each image via predbat/scripts/build-boot-test.sh
+                                    # (waits for the "update apps.yaml" prompt, fails on any "warning" in the boot
+                                    # logs, and for alpine/slim checks predbat/wait-for-ha service state via
+                                    # s6-svstat) — see "Testing a Dockerfile change locally" below, same script.
                                     #
                                     # IMPORTANT: this workflow only tests Dockerfile.alpine, Dockerfile.noble, and
                                     # Dockerfile.slim. It does NOT test Dockerfile, Dockerfile.old, or
@@ -191,18 +196,30 @@ predbat/
 
 ## Testing a Dockerfile change locally
 
-There's no test suite; the closest thing to validation is building an image, e.g.:
-```bash
-docker build -f predbat/Dockerfile.alpine \
-  --build-arg PREDBAT_VERSION=v8.42.5 --build-arg ADDON_VERSION=1.7.1 --build-arg S6_VERSION=v3.2.3.2 \
-  predbat/
-```
-**For `Dockerfile.alpine`/`.slim`, always pass `--build-arg S6_VERSION=...` explicitly (read the
-current pinned value from `versions.env`), even though the Dockerfile has its own `ARG
-S6_VERSION=v3.2.2.0` fallback.** Omitting it silently builds against that older fallback instead of
-the pinned version, and the two aren't equivalent for testing purposes — e.g. `user-bundles.d`
-support (see the s6-overlay changelog) was added in 3.2.3.2, so a locally-built image missing this
-flag can silently fail to start any service at all while looking otherwise fine, in a way CI (which
-does pass `S6_VERSION` from `versions.env`) won't catch or reproduce. This bit us for real: a manual
-verification build of an s6-overlay migration omitted the flag, giving a false pass on a service
-that was actually down.
+There's no unit/integration test suite, but there is a formal boot-test script:
+`predbat/scripts/build-boot-test.sh <alpine|noble|slim>`. Run with no other arguments, it builds
+the image itself, **always sourcing `PREDBAT_VERSION`/`ADDON_VERSION`/`S6_VERSION` from
+`versions.env`** (never hand-type `--build-arg`s — see the incident below for why), then boots it
+and asserts:
+- the container reaches the "update apps.yaml" prompt within a timeout (proof the entrypoint made
+  it through startup without crashing)
+- **no `warning` text appears anywhere in the boot logs** (e.g. s6-overlay deprecations) — this
+  check exists specifically because a warning doesn't stop the apps.yaml prompt from appearing, so
+  nothing else here would otherwise catch it
+- for `alpine`/`slim` (s6-based; `noble` has no s6-overlay), `predbat` is `up` via `s6-svstat` and
+  `wait-for-ha` is in one of its two expected states (`up`, or a self-triggered
+  `down (signal SIGTERM)` — its documented no-op-when-unconfigured behavior)
+
+This is the *same* script `.github/workflows/lint-build-boot-test.yml`'s "Boot test" step calls
+(passing `--tag`/`--platform` for the image it already built via `docker/build-push-action`, so CI
+doesn't rebuild), so a local pass and a CI pass mean the same thing.
+
+**Incident that led to this:** a manual verification build of an s6-overlay migration
+(`docker build -f predbat/Dockerfile.alpine --build-arg PREDBAT_VERSION=... --build-arg
+ADDON_VERSION=...`, no `S6_VERSION`) silently fell back to the Dockerfile's own `ARG
+S6_VERSION=v3.2.2.0` default instead of the pinned `v3.2.3.2` in `versions.env`. `user-bundles.d`
+support (see the s6-overlay changelog) was added in 3.2.3.2, so under 3.2.2.0 the new bundle
+definition was silently never read at all and no service in it ever started — while looking
+otherwise fine. CI's own build passes `S6_VERSION` correctly and would not have reproduced this;
+only the ad hoc local build was wrong. The boot-test script closes this gap by always sourcing
+`versions.env` itself when it does its own build, so the flag can't be forgotten.
