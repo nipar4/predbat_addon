@@ -9,6 +9,8 @@
 #     would otherwise catch them)
 #   - for alpine/slim (s6-based; noble has no s6-overlay), the predbat service is
 #     up and wait-for-ha is in an expected state
+# The same boot checks then run again as the predbat user (9005) with
+# --cap-drop ALL and no-new-privileges (homelab-runbooks #465).
 # Then a second phase (homelab-runbooks #470) edits the container's apps.yaml to
 # drop `template: true`, so Predbat itself starts, and verifies:
 #   - the web-login WARNING appears (no web_username/web_password set) and it is
@@ -81,68 +83,90 @@ if [ -z "$tag" ]; then
 fi
 
 container="predbat-boot-test-${variant}-$$"
+nonroot_container="predbat-boot-test-${variant}-nonroot-$$"
 
 cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  docker rm -f "$container" "$nonroot_container" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-echo "==> Starting $tag"
-docker run -d --name "$container" "${platform_args[@]}" "$tag" >/dev/null
+# Start the image as $1 (extra docker run options follow), wait for the
+# apps.yaml prompt, check the logs hold no warning and (alpine/slim) the s6
+# services are in their expected states. Sets $logs.
+boot_and_check() {
+  local container="$1"
+  shift
+  echo "==> Starting $tag${*:+ ($*)}"
+  docker run -d --name "$container" "${platform_args[@]}" "$@" "$tag" >/dev/null
 
-echo "==> Waiting up to ${timeout}s for the apps.yaml prompt..."
-elapsed=0
-found=0
-logs=""
-while [ "$elapsed" -lt "$timeout" ]; do
-  if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
-    echo "FAIL: container exited early" >&2
-    docker logs "$container" >&2
+  echo "==> Waiting up to ${timeout}s for the apps.yaml prompt..."
+  local elapsed=0 found=0
+  logs=""
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
+      echo "FAIL: container exited early" >&2
+      docker logs "$container" >&2
+      exit 1
+    fi
+    logs="$(docker logs "$container" 2>&1)"
+    if grep -qi "update apps.yaml" <<<"$logs"; then
+      found=1
+      break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  if [ "$found" -ne 1 ]; then
+    echo "FAIL: apps.yaml prompt not seen within ${timeout}s" >&2
+    echo "$logs" >&2
     exit 1
   fi
-  logs="$(docker logs "$container" 2>&1)"
-  if grep -qi "update apps.yaml" <<<"$logs"; then
-    found=1
-    break
-  fi
-  sleep 2
-  elapsed=$((elapsed + 2))
-done
+  echo "==> Boot prompt reached"
 
-if [ "$found" -ne 1 ]; then
-  echo "FAIL: apps.yaml prompt not seen within ${timeout}s" >&2
-  echo "$logs" >&2
-  exit 1
-fi
-echo "==> Boot prompt reached"
-
-if grep -qi "warning" <<<"$logs"; then
-  echo "FAIL: warning(s) found in boot logs:" >&2
-  grep -i "warning" <<<"$logs" >&2
-  exit 1
-fi
-echo "==> No warnings in boot logs"
-
-if [ "$variant" = "alpine" ] || [ "$variant" = "slim" ]; then
-  predbat_status="$(docker exec "$container" /package/admin/s6/command/s6-svstat /run/service/predbat)"
-  echo "==> predbat: $predbat_status"
-  if ! grep -q "^up" <<<"$predbat_status"; then
-    echo "FAIL: predbat service is not up: $predbat_status" >&2
+  if grep -qi "warning" <<<"$logs"; then
+    echo "FAIL: warning(s) found in boot logs:" >&2
+    grep -i "warning" <<<"$logs" >&2
     exit 1
   fi
+  echo "==> No warnings in boot logs"
 
-  waitforha_status="$(docker exec "$container" /package/admin/s6/command/s6-svstat /run/service/wait-for-ha)"
-  echo "==> wait-for-ha: $waitforha_status"
-  # wait-for-ha is optional (only polls HA if WAIT_FOR_HA_HOST/_PORT are set): "up" (actively
-  # waiting/polling) or a self-triggered "down (signal SIGTERM)" (its documented no-op-when-
-  # unconfigured behavior) are both fine; anything else suggests a crash loop.
-  if ! grep -qE "^(up|down \(signal SIGTERM\))" <<<"$waitforha_status"; then
-    echo "FAIL: wait-for-ha service in unexpected state: $waitforha_status" >&2
-    exit 1
+  if [ "$variant" = "alpine" ] || [ "$variant" = "slim" ]; then
+    predbat_status="$(docker exec "$container" /package/admin/s6/command/s6-svstat /run/service/predbat)"
+    echo "==> predbat: $predbat_status"
+    if ! grep -q "^up" <<<"$predbat_status"; then
+      echo "FAIL: predbat service is not up: $predbat_status" >&2
+      exit 1
+    fi
+
+    waitforha_status="$(docker exec "$container" /package/admin/s6/command/s6-svstat /run/service/wait-for-ha)"
+    echo "==> wait-for-ha: $waitforha_status"
+    # wait-for-ha is optional (only polls HA if WAIT_FOR_HA_HOST/_PORT are set): "up" (actively
+    # waiting/polling) or a self-triggered "down (signal SIGTERM)" (its documented no-op-when-
+    # unconfigured behavior) are both fine; anything else suggests a crash loop.
+    if ! grep -qE "^(up|down \(signal SIGTERM\))" <<<"$waitforha_status"; then
+      echo "FAIL: wait-for-ha service in unexpected state: $waitforha_status" >&2
+      exit 1
+    fi
   fi
-fi
+}
 
+boot_and_check "$container"
 echo "==> Phase 1 passed: ${variant} boots cleanly, no warnings, services in expected state"
+
+# ---------------------------------------------------------------------------
+# Non-root phase (homelab-runbooks #465): the same checks with the image's
+# predbat user, no capabilities and no-new-privileges, as the README's
+# "Running securely" example runs it.
+# ---------------------------------------------------------------------------
+boot_and_check "$nonroot_container" --user 9005:9005 --cap-drop ALL --security-opt no-new-privileges:true
+pid1_uid="$(docker exec "$nonroot_container" awk '/^Uid:/ {print $2}' /proc/1/status)"
+if [ "$pid1_uid" != "9005" ]; then
+  echo "FAIL: non-root run: PID 1 runs as uid ${pid1_uid}, expected 9005" >&2
+  exit 1
+fi
+docker rm -f "$nonroot_container" >/dev/null 2>&1 || true
+echo "==> Non-root phase passed: ${variant} boots as 9005 with --cap-drop ALL and no-new-privileges"
 
 # ---------------------------------------------------------------------------
 # Phase 2: let Predbat start (homelab-runbooks #470). Test-only: the image is

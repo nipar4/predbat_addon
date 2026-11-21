@@ -87,6 +87,12 @@ RUN set -eux; \
 
 # s6-overlay
 COPY --from=s6-builder /s6-root/ /
+
+# /run belongs to the predbat user, the layout s6-overlay's preinit expects for
+# an unprivileged boot, so `--user ${UID}:${GID}` works with --cap-drop ALL and
+# no-new-privileges (homelab-runbooks #465). A default root run is unchanged:
+# preinit, running as root, chowns /run back to root (mode 0755) at start.
+RUN chown "${UID}:${GID}" /run && chmod 0755 /run
 COPY --from=builder /install /usr/local/
 
 # Predbat never uses pip at runtime, and pip's bundled copies of urllib3,
