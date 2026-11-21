@@ -65,6 +65,10 @@ if [ -z "$tag" ]; then
     --build-arg "PREDBAT_SHA=$PREDBAT_SHA" \
     --build-arg "ADDON_VERSION=$ADDON_VERSION" \
     --build-arg "S6_VERSION=$S6_VERSION" \
+    --build-arg "S6_SHA256_NOARCH=$S6_SHA256_NOARCH" \
+    --build-arg "S6_SHA256_AMD64=$S6_SHA256_AMD64" \
+    --build-arg "S6_SHA256_ARM64=$S6_SHA256_ARM64" \
+    --build-arg "S6_SHA256_ARM=$S6_SHA256_ARM" \
     -t "$tag" "$repo_root/predbat"
 fi
 

@@ -80,6 +80,10 @@ jobs:
             echo "predbat_version=$(echo "$PREDBAT_VERSION" | tr -d '[:space:]')"
             echo "addon_version=$(echo "$ADDON_VERSION" | tr -d '[:space:]')"
             echo "s6_version=$(echo "$S6_VERSION" | tr -d '[:space:]')"
+            echo "s6_sha256_noarch=$(echo "$S6_SHA256_NOARCH" | tr -d '[:space:]')"
+            echo "s6_sha256_amd64=$(echo "$S6_SHA256_AMD64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm64=$(echo "$S6_SHA256_ARM64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm=$(echo "$S6_SHA256_ARM" | tr -d '[:space:]')"
           } >> "$GITHUB_OUTPUT"
 
       # Build from the commit the PREDBAT_VERSION tag points at, not the tag (D6)
@@ -118,6 +122,10 @@ jobs:
             PREDBAT_SHA=${{ steps.predbat_sha.outputs.sha }}
             ADDON_VERSION=${{ steps.versions.outputs.addon_version }}
             S6_VERSION=${{ steps.versions.outputs.s6_version }}
+            S6_SHA256_NOARCH=${{ steps.versions.outputs.s6_sha256_noarch }}
+            S6_SHA256_AMD64=${{ steps.versions.outputs.s6_sha256_amd64 }}
+            S6_SHA256_ARM64=${{ steps.versions.outputs.s6_sha256_arm64 }}
+            S6_SHA256_ARM=${{ steps.versions.outputs.s6_sha256_arm }}
           cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }},mode=max
 

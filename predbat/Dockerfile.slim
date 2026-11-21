@@ -20,6 +20,12 @@ RUN set -eux; \
 FROM ${BASE_IMAGE} AS s6-builder
 
 ARG S6_VERSION=v3.2.2.0
+# Checksums from versions.env, passed in by CI; no defaults, so a build
+# without them fails instead of skipping the check (D5)
+ARG S6_SHA256_NOARCH
+ARG S6_SHA256_AMD64
+ARG S6_SHA256_ARM64
+ARG S6_SHA256_ARM
 ARG TARGETARCH
 
 WORKDIR /tmp/s6
@@ -28,10 +34,10 @@ WORKDIR /tmp/s6
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates xz-utils
 
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-noarch.tar.xz .
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-x86_64.tar.xz s6-overlay-amd64.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-aarch64.tar.xz s6-overlay-arm64.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-arm.tar.xz s6-overlay-arm.tar.xz
+ADD --checksum=sha256:${S6_SHA256_NOARCH} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-noarch.tar.xz .
+ADD --checksum=sha256:${S6_SHA256_AMD64} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-x86_64.tar.xz s6-overlay-amd64.tar.xz
+ADD --checksum=sha256:${S6_SHA256_ARM64} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-aarch64.tar.xz s6-overlay-arm64.tar.xz
+ADD --checksum=sha256:${S6_SHA256_ARM} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-arm.tar.xz s6-overlay-arm.tar.xz
 
 RUN set -eux; \
     mkdir -p /s6-root; \

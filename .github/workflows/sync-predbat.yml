@@ -26,6 +26,10 @@ jobs:
       new_version: ${{ steps.upstream.outputs.tag }}
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
       s6_version: ${{ steps.s6_version.outputs.s6_version }}
+      s6_sha256_noarch: ${{ steps.s6_version.outputs.s6_sha256_noarch }}
+      s6_sha256_amd64: ${{ steps.s6_version.outputs.s6_sha256_amd64 }}
+      s6_sha256_arm64: ${{ steps.s6_version.outputs.s6_sha256_arm64 }}
+      s6_sha256_arm: ${{ steps.s6_version.outputs.s6_sha256_arm }}
       commit_sha: ${{ steps.push.outputs.sha }}
       predbat_sha: ${{ steps.predbat_sha.outputs.sha }}
       addon_current: ${{ steps.addon_check.outputs.addon_current }}
@@ -90,7 +94,13 @@ jobs:
           source versions.env
           S6_VERSION_CLEAN=$(echo "$S6_VERSION" | tr -d '[:space:]')
           echo "S6 version: $S6_VERSION_CLEAN"
-          echo "s6_version=$S6_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+          {
+            echo "s6_version=$S6_VERSION_CLEAN"
+            echo "s6_sha256_noarch=$(echo "$S6_SHA256_NOARCH" | tr -d '[:space:]')"
+            echo "s6_sha256_amd64=$(echo "$S6_SHA256_AMD64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm64=$(echo "$S6_SHA256_ARM64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm=$(echo "$S6_SHA256_ARM" | tr -d '[:space:]')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check addon is current
         id: addon_check
@@ -165,6 +175,10 @@ jobs:
       PREDBAT_SHA: ${{ needs.check-and-sync.outputs.predbat_sha }}
       ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
       S6_VERSION: ${{ needs.check-and-sync.outputs.s6_version }}
+      S6_SHA256_NOARCH: ${{ needs.check-and-sync.outputs.s6_sha256_noarch }}
+      S6_SHA256_AMD64: ${{ needs.check-and-sync.outputs.s6_sha256_amd64 }}
+      S6_SHA256_ARM64: ${{ needs.check-and-sync.outputs.s6_sha256_arm64 }}
+      S6_SHA256_ARM: ${{ needs.check-and-sync.outputs.s6_sha256_arm }}
 
     steps:
       - name: Checkout code
@@ -211,6 +225,10 @@ jobs:
             PREDBAT_SHA=${{ env.PREDBAT_SHA }}
             ADDON_VERSION=${{ env.ADDON_VERSION }}
             S6_VERSION=${{ env.S6_VERSION }}
+            S6_SHA256_NOARCH=${{ env.S6_SHA256_NOARCH }}
+            S6_SHA256_AMD64=${{ env.S6_SHA256_AMD64 }}
+            S6_SHA256_ARM64=${{ env.S6_SHA256_ARM64 }}
+            S6_SHA256_ARM=${{ env.S6_SHA256_ARM }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
           provenance: true
