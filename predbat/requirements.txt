@@ -5,9 +5,9 @@ aiofiles
 aiohttp
 aiomqtt
 Jinja2
-ruamel.yaml==0.18.17
+ruamel.yaml==0.19.1
 pyjwt
-numpy==2.3.5
+numpy==2.5.5
 prometheus-client
 protobuf
 pvlib
