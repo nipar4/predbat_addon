@@ -50,10 +50,19 @@ if [ -z "$tag" ]; then
   # shellcheck disable=SC1091
   source "$repo_root/versions.env"
   tag="predbat-boot-test:${variant}"
-  echo "==> Building predbat/Dockerfile.${variant} (PREDBAT_VERSION=$PREDBAT_VERSION ADDON_VERSION=$ADDON_VERSION S6_VERSION=$S6_VERSION)"
+  # Same tag-to-commit resolution as CI: the Dockerfiles fetch Predbat by commit
+  batpred=https://github.com/springfall2008/batpred.git
+  PREDBAT_SHA="$(git ls-remote "$batpred" "refs/tags/${PREDBAT_VERSION}^{}" | cut -f1)"
+  [ -n "$PREDBAT_SHA" ] || PREDBAT_SHA="$(git ls-remote "$batpred" "refs/tags/${PREDBAT_VERSION}" | cut -f1)"
+  if ! [[ "$PREDBAT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "could not resolve Predbat tag ${PREDBAT_VERSION} to a commit" >&2
+    exit 1
+  fi
+  echo "==> Building predbat/Dockerfile.${variant} (PREDBAT_VERSION=$PREDBAT_VERSION PREDBAT_SHA=$PREDBAT_SHA ADDON_VERSION=$ADDON_VERSION S6_VERSION=$S6_VERSION)"
   docker build "${platform_args[@]}" \
     -f "$repo_root/predbat/Dockerfile.${variant}" \
     --build-arg "PREDBAT_VERSION=$PREDBAT_VERSION" \
+    --build-arg "PREDBAT_SHA=$PREDBAT_SHA" \
     --build-arg "ADDON_VERSION=$ADDON_VERSION" \
     --build-arg "S6_VERSION=$S6_VERSION" \
     -t "$tag" "$repo_root/predbat"

@@ -81,6 +81,22 @@ jobs:
             echo "s6_version=$(echo "$S6_VERSION" | tr -d '[:space:]')"
           } >> "$GITHUB_OUTPUT"
 
+      # Build from the commit the PREDBAT_VERSION tag points at, not the tag (D6)
+      - name: Resolve Predbat commit
+        id: predbat_sha
+        run: |
+          set -euo pipefail
+          tag="${{ steps.versions.outputs.predbat_version }}"
+          repo=https://github.com/springfall2008/batpred.git
+          sha=$(git ls-remote "$repo" "refs/tags/${tag}^{}" | cut -f1)
+          [ -n "$sha" ] || sha=$(git ls-remote "$repo" "refs/tags/${tag}" | cut -f1)
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve Predbat tag ${tag} to a commit (got '${sha}')"
+            exit 1
+          fi
+          echo "Predbat ${tag} = ${sha}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
@@ -98,6 +114,7 @@ jobs:
           tags: predbat-addon-test:${{ matrix.variant }}
           build-args: |
             PREDBAT_VERSION=${{ steps.versions.outputs.predbat_version }}
+            PREDBAT_SHA=${{ steps.predbat_sha.outputs.sha }}
             ADDON_VERSION=${{ steps.versions.outputs.addon_version }}
             S6_VERSION=${{ steps.versions.outputs.s6_version }}
           cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }}

@@ -26,6 +26,7 @@ jobs:
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
       s6_version: ${{ steps.s6_version.outputs.s6_version }}
       commit_sha: ${{ steps.push.outputs.sha }}
+      predbat_sha: ${{ steps.predbat_sha.outputs.sha }}
       addon_current: ${{ steps.addon_check.outputs.addon_current }}
 
     steps:
@@ -48,6 +49,23 @@ jobs:
           fi
           echo "Latest upstream release: $LATEST"
           echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
+
+      # The build fetches Predbat by this commit, not by the tag, so a tag
+      # moved after the fact cannot change what the image ships (D6)
+      - name: Resolve upstream release tag to a commit
+        id: predbat_sha
+        run: |
+          set -euo pipefail
+          tag="${{ steps.upstream.outputs.tag }}"
+          repo=https://github.com/springfall2008/batpred.git
+          sha=$(git ls-remote "$repo" "refs/tags/${tag}^{}" | cut -f1)
+          [ -n "$sha" ] || sha=$(git ls-remote "$repo" "refs/tags/${tag}" | cut -f1)
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve Predbat tag ${tag} to a commit (got '${sha}')"
+            exit 1
+          fi
+          echo "Predbat ${tag} = ${sha}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Read current version
         id: current
@@ -143,6 +161,7 @@ jobs:
     env:
       USER: ${{ secrets.DOCKERHUB_USERNAME }}
       PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      PREDBAT_SHA: ${{ needs.check-and-sync.outputs.predbat_sha }}
       ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
       S6_VERSION: ${{ needs.check-and-sync.outputs.s6_version }}
 
@@ -155,6 +174,7 @@ jobs:
       - name: Validate version
         run: |
           [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty predbat version!"; exit 1; }
+          [ -n "${{ env.PREDBAT_SHA }}" ] || { echo "Empty predbat commit SHA!"; exit 1; }
           [ -n "${{ env.ADDON_VERSION }}" ] || { echo "Empty addon version!"; exit 1; }
           [ -n "${{ env.S6_VERSION }}" ] || { echo "Empty s6 version!"; exit 1; }
 
@@ -187,6 +207,7 @@ jobs:
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.value }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
+            PREDBAT_SHA=${{ env.PREDBAT_SHA }}
             ADDON_VERSION=${{ env.ADDON_VERSION }}
             S6_VERSION=${{ env.S6_VERSION }}
           cache-from: type=gha,scope=${{ matrix.variant }}

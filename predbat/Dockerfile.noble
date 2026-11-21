@@ -9,6 +9,8 @@ ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
+# Commit the PREDBAT_VERSION tag points at, resolved by CI (D6)
+ARG PREDBAT_SHA
 ARG BASE_IMAGE
 ARG BUILD_DATE
 ARG ADDON_VERSION
@@ -33,8 +35,17 @@ WORKDIR /config
 RUN groupadd -g ${GID} ${USER_GROUP} \
     && useradd -l -u ${UID} -g ${GID} ${USER_NAME} \
     && chown -R ${USER_NAME} /config
+# Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
+# silently fetch batpred's default branch instead of the release (D6)
+RUN case "${PREDBAT_SHA}" in \
+      *[!0-9a-f]*) echo "PREDBAT_SHA must be a full commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1 ;; \
+    esac; \
+    if [ "${#PREDBAT_SHA}" -ne 40 ]; then \
+      echo "PREDBAT_SHA must be a full 40-character commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1; \
+    fi
+
 # Copy the rootfs directory to /addon - Predbat itself is fetched straight from GitHub, never vendored
-ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ /addon/
+ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/ https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/config/ /addon/
 COPY --chown=${USER_NAME} rootfs/noble/* /addon/
 #ADD https://github.com/springfall2008/batpred.git#main:apps/predbat/ https://github.com/springfall2008/batpred.git#main:apps/predbat/config/ rootfs/noble/* /addon/
 #COPY --chown=${USER_NAME} ha.py /addon
@@ -61,6 +72,7 @@ LABEL \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.title="Predbat Addon Docker version" \
     org.opencontainers.image.base.digest=${BASE_IMAGE} \
+    org.opencontainers.image.revision=${PREDBAT_SHA} \
     org.opencontainers.image.version=${PREDBAT_VERSION}
 
 # Set the entrypoint to the startup script
