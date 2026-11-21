@@ -1,0 +1,96 @@
+name: Regenerate requirements.lock
+
+# Dependabot's pip ecosystem does not read predbat/requirements.lock, so this
+# job regenerates it monthly from predbat/requirements.txt (same uv command as
+# the lock's header) and opens or updates a pull request when the pins change.
+# Nothing is merged automatically (homelab-runbooks #469).
+#
+# A pull request opened with GITHUB_TOKEN does not trigger other workflows, so
+# lint-build-boot-test.yml does not run on it by itself: close and reopen the
+# PR (or push to its branch) to start the build and boot test before merging.
+
+on:
+  schedule:
+    - cron: '17 6 1 * *'   # 06:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.13.9"
+  LOCK_BRANCH: deps/requirements-lock
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the lock branch
+      pull-requests: write   # open the pull request
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Regenerate the lock
+        id: lock
+        working-directory: predbat
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          # Same command as the header of requirements.lock
+          uv pip compile requirements.txt --python-version 3.13 --python-platform linux \
+            --generate-hashes --no-header -o "$tmp/body-3.13.txt"
+          # noble runs Python 3.14 from the same lock; stop if the two diverge
+          uv pip compile requirements.txt --python-version 3.14 --python-platform linux \
+            --generate-hashes --no-header -o "$tmp/body-3.14.txt"
+          if ! cmp -s "$tmp/body-3.13.txt" "$tmp/body-3.14.txt"; then
+            echo "::error::Python 3.13 and 3.14 now resolve differently; noble needs its own requirements-noble.lock"
+            diff "$tmp/body-3.13.txt" "$tmp/body-3.14.txt" || true
+            exit 1
+          fi
+          # Keep the existing comment header, replace everything below it
+          sed '/^[^#]/,$d' requirements.lock > "$tmp/new.lock"
+          cat "$tmp/body-3.13.txt" >> "$tmp/new.lock"
+          if cmp -s "$tmp/new.lock" requirements.lock; then
+            echo "requirements.lock is current"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            cp "$tmp/new.lock" requirements.lock
+            git --no-pager diff --stat
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the branch and open a pull request
+        if: steps.lock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -C "$LOCK_BRANCH"
+          git add predbat/requirements.lock
+          git commit -m "chore: regenerate predbat/requirements.lock"
+          git push --force origin "$LOCK_BRANCH"
+          existing="$(gh pr list -R "${{ github.repository }}" --head "$LOCK_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "Updated the existing pull request #$existing"
+          else
+            gh pr create -R "${{ github.repository }}" --base main --head "$LOCK_BRANCH" \
+              --title "chore: regenerate predbat/requirements.lock" \
+              --body "Monthly regeneration of predbat/requirements.lock from predbat/requirements.txt (uv ${UV_VERSION}, Python 3.13 and 3.14 resolve identically). Opened by the Regenerate requirements.lock workflow; not merged automatically.
+
+          GITHUB_TOKEN pull requests do not trigger other workflows: close and reopen this PR to run the build and boot test before merging."
+          fi
