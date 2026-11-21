@@ -1,13 +1,15 @@
-# Use the official Ubuntu image - deliberately tracks :latest (unlike
-# alpine/slim's pinned BASE_IMAGE) to pick up Ubuntu's own security patches
-# hadolint ignore=DL3007
-FROM ubuntu:latest
+# Ubuntu 26.04, pinned (D11): ubuntu:latest moved from 24.04 to 26.04 without
+# warning, which changed Python from 3.12 to 3.14 for users. Despite the file
+# name this is not noble (24.04). Security patches still come in through the
+# apt-get upgrade below.
+ARG BASE_IMAGE="ubuntu:26.04"
+FROM ${BASE_IMAGE}
 ARG USER_NAME="predbat"
 ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
-ARG BASE_IMAGE="ubuntu:latest"
+ARG BASE_IMAGE
 ARG BUILD_DATE
 ARG ADDON_VERSION
 # Set the working directory
