@@ -1,13 +1,17 @@
-# Use the official Ubuntu image - deliberately tracks :latest (unlike
-# alpine/slim's pinned BASE_IMAGE) to pick up Ubuntu's own security patches
-# hadolint ignore=DL3007
-FROM ubuntu:latest
+# Ubuntu 26.04, pinned (D11): ubuntu:latest moved from 24.04 to 26.04 without
+# warning, which changed Python from 3.12 to 3.14 for users. Despite the file
+# name this is not noble (24.04). Security patches still come in through the
+# apt-get upgrade below.
+ARG BASE_IMAGE="ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db"
+FROM ${BASE_IMAGE}
 ARG USER_NAME="predbat"
 ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
-ARG BASE_IMAGE="ubuntu:latest"
+# Commit the PREDBAT_VERSION tag points at, resolved by CI (D6)
+ARG PREDBAT_SHA
+ARG BASE_IMAGE
 ARG BUILD_DATE
 ARG ADDON_VERSION
 # Set the working directory
@@ -15,14 +19,19 @@ WORKDIR /addon
 
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-COPY requirements.txt /
+COPY requirements.lock /
 # hadolint ignore=DL3005,DL3008
 RUN apt-get update && apt-get upgrade -y && \
     apt-get dist-upgrade -y && \
     apt-get update && apt-get install -y --no-install-recommends python3-minimal libffi-dev && \
     #build-essential
     apt-get install -y --no-install-recommends python3-pip && \
-    pip install --no-cache-dir --break-system-packages -r /requirements.txt && \
+    pip install --no-cache-dir --break-system-packages --require-hashes -r /requirements.lock && \
+    # Remove pip once the deps are in (D8); python3 is marked manual so
+    # autoremove keeps the full interpreter that python3-pip pulled in
+    apt-mark manual python3 && \
+    apt-get purge -y python3-pip && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -31,8 +40,17 @@ WORKDIR /config
 RUN groupadd -g ${GID} ${USER_GROUP} \
     && useradd -l -u ${UID} -g ${GID} ${USER_NAME} \
     && chown -R ${USER_NAME} /config
+# Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
+# silently fetch batpred's default branch instead of the release (D6)
+RUN case "${PREDBAT_SHA}" in \
+      *[!0-9a-f]*) echo "PREDBAT_SHA must be a full commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1 ;; \
+    esac; \
+    if [ "${#PREDBAT_SHA}" -ne 40 ]; then \
+      echo "PREDBAT_SHA must be a full 40-character commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1; \
+    fi
+
 # Copy the rootfs directory to /addon - Predbat itself is fetched straight from GitHub, never vendored
-ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ /addon/
+ADD --chown=${USER_NAME} https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/ https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/config/ /addon/
 COPY --chown=${USER_NAME} rootfs/noble/* /addon/
 #ADD https://github.com/springfall2008/batpred.git#main:apps/predbat/ https://github.com/springfall2008/batpred.git#main:apps/predbat/config/ rootfs/noble/* /addon/
 #COPY --chown=${USER_NAME} ha.py /addon
@@ -59,7 +77,12 @@ LABEL \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.title="Predbat Addon Docker version" \
     org.opencontainers.image.base.digest=${BASE_IMAGE} \
+    org.opencontainers.image.revision=${PREDBAT_SHA} \
     org.opencontainers.image.version=${PREDBAT_VERSION}
 
+# Predbat's web server answers on 5052 once it is running; a hung Predbat
+# shows as unhealthy instead of healthy (D12)
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
+    CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5052/dash', timeout=4)"]
 # Set the entrypoint to the startup script
 ENTRYPOINT [ "sh", "/addon/run.standalone.sh"]

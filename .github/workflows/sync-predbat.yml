@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'predbat/requirements.txt'
+      - 'predbat/requirements.lock'
       - 'versions.env'
 
 concurrency:
@@ -25,7 +26,12 @@ jobs:
       new_version: ${{ steps.upstream.outputs.tag }}
       addon_version: ${{ steps.addon_version.outputs.addon_version }}
       s6_version: ${{ steps.s6_version.outputs.s6_version }}
+      s6_sha256_noarch: ${{ steps.s6_version.outputs.s6_sha256_noarch }}
+      s6_sha256_amd64: ${{ steps.s6_version.outputs.s6_sha256_amd64 }}
+      s6_sha256_arm64: ${{ steps.s6_version.outputs.s6_sha256_arm64 }}
+      s6_sha256_arm: ${{ steps.s6_version.outputs.s6_sha256_arm }}
       commit_sha: ${{ steps.push.outputs.sha }}
+      predbat_sha: ${{ steps.predbat_sha.outputs.sha }}
       addon_current: ${{ steps.addon_check.outputs.addon_current }}
 
     steps:
@@ -49,6 +55,23 @@ jobs:
           echo "Latest upstream release: $LATEST"
           echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
 
+      # The build fetches Predbat by this commit, not by the tag, so a tag
+      # moved after the fact cannot change what the image ships (D6)
+      - name: Resolve upstream release tag to a commit
+        id: predbat_sha
+        run: |
+          set -euo pipefail
+          tag="${{ steps.upstream.outputs.tag }}"
+          repo=https://github.com/springfall2008/batpred.git
+          sha=$(git ls-remote "$repo" "refs/tags/${tag}^{}" | cut -f1)
+          [ -n "$sha" ] || sha=$(git ls-remote "$repo" "refs/tags/${tag}" | cut -f1)
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve Predbat tag ${tag} to a commit (got '${sha}')"
+            exit 1
+          fi
+          echo "Predbat ${tag} = ${sha}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
       - name: Read current version
         id: current
         run: |
@@ -71,7 +94,13 @@ jobs:
           source versions.env
           S6_VERSION_CLEAN=$(echo "$S6_VERSION" | tr -d '[:space:]')
           echo "S6 version: $S6_VERSION_CLEAN"
-          echo "s6_version=$S6_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+          {
+            echo "s6_version=$S6_VERSION_CLEAN"
+            echo "s6_sha256_noarch=$(echo "$S6_SHA256_NOARCH" | tr -d '[:space:]')"
+            echo "s6_sha256_amd64=$(echo "$S6_SHA256_AMD64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm64=$(echo "$S6_SHA256_ARM64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm=$(echo "$S6_SHA256_ARM" | tr -d '[:space:]')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check addon is current
         id: addon_check
@@ -143,8 +172,13 @@ jobs:
     env:
       USER: ${{ secrets.DOCKERHUB_USERNAME }}
       PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      PREDBAT_SHA: ${{ needs.check-and-sync.outputs.predbat_sha }}
       ADDON_VERSION: ${{ needs.check-and-sync.outputs.addon_version }}
       S6_VERSION: ${{ needs.check-and-sync.outputs.s6_version }}
+      S6_SHA256_NOARCH: ${{ needs.check-and-sync.outputs.s6_sha256_noarch }}
+      S6_SHA256_AMD64: ${{ needs.check-and-sync.outputs.s6_sha256_amd64 }}
+      S6_SHA256_ARM64: ${{ needs.check-and-sync.outputs.s6_sha256_arm64 }}
+      S6_SHA256_ARM: ${{ needs.check-and-sync.outputs.s6_sha256_arm }}
 
     steps:
       - name: Checkout code
@@ -155,6 +189,7 @@ jobs:
       - name: Validate version
         run: |
           [ -n "${{ env.PREDBAT_VERSION }}" ] || { echo "Empty predbat version!"; exit 1; }
+          [ -n "${{ env.PREDBAT_SHA }}" ] || { echo "Empty predbat commit SHA!"; exit 1; }
           [ -n "${{ env.ADDON_VERSION }}" ] || { echo "Empty addon version!"; exit 1; }
           [ -n "${{ env.S6_VERSION }}" ] || { echo "Empty s6 version!"; exit 1; }
 
@@ -187,12 +222,82 @@ jobs:
           build-args: |
             BUILD_DATE=${{ steps.date.outputs.value }}
             PREDBAT_VERSION=${{ env.PREDBAT_VERSION }}
+            PREDBAT_SHA=${{ env.PREDBAT_SHA }}
             ADDON_VERSION=${{ env.ADDON_VERSION }}
             S6_VERSION=${{ env.S6_VERSION }}
+            S6_SHA256_NOARCH=${{ env.S6_SHA256_NOARCH }}
+            S6_SHA256_AMD64=${{ env.S6_SHA256_AMD64 }}
+            S6_SHA256_ARM64=${{ env.S6_SHA256_ARM64 }}
+            S6_SHA256_ARM=${{ env.S6_SHA256_ARM }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,scope=${{ matrix.variant }},mode=max
           provenance: true
           sbom: true
+
+  # Post-publish scan (D2/D3). Runs after the images are pushed and never
+  # gates anything: release keeps needs: [check-and-sync, build] only. A
+  # fixable CRITICAL/HIGH finding fails this job, and GitHub's failed-run
+  # email is the alert; the next release or a manual rebuild fixes it.
+  scan:
+    needs: [check-and-sync, build]
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && needs.check-and-sync.outputs.version_changed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: noble
+            tag_suffix: ""
+          - variant: alpine
+            tag_suffix: "alpine-"
+          - variant: slim
+            tag_suffix: "slim-"
+
+    env:
+      USER: ${{ secrets.DOCKERHUB_USERNAME }}
+      PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      TRIVY_PLATFORM: linux/amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check-and-sync.outputs.commit_sha || github.sha }}
+
+      # Report for the Security tab: CRITICAL/HIGH including unfixed ones, so
+      # they are listed there without raising an alert. Never fails the job.
+      - name: Trivy report (${{ matrix.variant }}, SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}${{ env.PREDBAT_VERSION }}
+          format: sarif
+          output: trivy-${{ matrix.variant }}.sarif
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '0'
+
+      - name: Upload SARIF to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          sarif_file: trivy-${{ matrix.variant }}.sarif
+          category: trivy-${{ matrix.variant }}
+
+      # The alert: fixable CRITICAL/HIGH only (D3). exit-code 1 fails this job.
+      - name: Trivy gate (${{ matrix.variant }}, fixable CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}${{ env.PREDBAT_VERSION }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '1'
 
   release:
     needs: [check-and-sync, build]

@@ -1,0 +1,21 @@
+# Trivy ignore list for the alpine, slim and noble images (homelab-runbooks #465, D3).
+#
+# Used by both Trivy scans: the pull-request scan in
+# .github/workflows/lint-build-boot-test.yml and the post-publish scan job in
+# .github/workflows/sync-predbat.yml. Both alert on fixable CRITICAL and HIGH
+# findings only (severity CRITICAL,HIGH, ignore-unfixed).
+#
+# Only add an entry for a deliberate, reviewed exception: a comment line with the
+# variant(s) and the reason, then the finding on its own line:
+#
+#   # <variant(s)>: <reason>
+#   <CVE or rule id> exp:<review-by date YYYY-MM-DD>
+#
+# Trivy stops ignoring the entry after the exp: date, so the scan alerts again
+# and the exception has to be reviewed and either renewed or removed.
+#
+# Example (not active):
+#   # noble: only in a build-time package, not reachable at runtime
+#   CVE-2026-00000 exp:2027-02-01
+#
+# No exceptions at present.

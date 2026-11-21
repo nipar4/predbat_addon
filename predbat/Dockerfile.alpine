@@ -1,4 +1,4 @@
-ARG BASE_IMAGE="python:3.13-alpine"
+ARG BASE_IMAGE="python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e"
 
 # -------------------------------------------------
 # Python deps builder
@@ -6,12 +6,12 @@ ARG BASE_IMAGE="python:3.13-alpine"
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /install
 
-COPY requirements.txt /
+COPY requirements.lock /
 
 # hadolint ignore=DL3018
 RUN set -eux; \
     apk add --no-cache --virtual .build-deps gcc g++ libffi-dev musl-dev; \
-    pip install --no-cache-dir --prefix=/install -r /requirements.txt
+    pip install --no-cache-dir --prefix=/install --require-hashes -r /requirements.lock
 
 # -------------------------------------------------
 # s6-overlay builder
@@ -19,6 +19,12 @@ RUN set -eux; \
 FROM ${BASE_IMAGE} AS s6-builder
 
 ARG S6_VERSION=v3.2.2.0
+# Checksums from versions.env, passed in by CI; no defaults, so a build
+# without them fails instead of skipping the check (D5)
+ARG S6_SHA256_NOARCH
+ARG S6_SHA256_AMD64
+ARG S6_SHA256_ARM64
+ARG S6_SHA256_ARM
 ARG TARGETARCH
 
 WORKDIR /tmp/s6
@@ -26,10 +32,10 @@ WORKDIR /tmp/s6
 # hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates xz
 
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-noarch.tar.xz .
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-x86_64.tar.xz s6-overlay-amd64.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-aarch64.tar.xz s6-overlay-arm64.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-arm.tar.xz s6-overlay-arm.tar.xz
+ADD --checksum=sha256:${S6_SHA256_NOARCH} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-noarch.tar.xz .
+ADD --checksum=sha256:${S6_SHA256_AMD64} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-x86_64.tar.xz s6-overlay-amd64.tar.xz
+ADD --checksum=sha256:${S6_SHA256_ARM64} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-aarch64.tar.xz s6-overlay-arm64.tar.xz
+ADD --checksum=sha256:${S6_SHA256_ARM} https://github.com/just-containers/s6-overlay/releases/download/${S6_VERSION}/s6-overlay-arm.tar.xz s6-overlay-arm.tar.xz
 
 RUN set -eux; \
     mkdir -p /s6-root; \
@@ -51,6 +57,8 @@ ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
+# Commit the PREDBAT_VERSION tag points at, resolved by CI (D6)
+ARG PREDBAT_SHA
 ARG BASE_IMAGE
 ARG BUILD_DATE
 ARG ADDON_VERSION
@@ -63,8 +71,10 @@ WORKDIR /config
 # hadolint ignore=DL3002,DL3066
 USER root
 
-# hadolint ignore=DL3018
+# apk upgrade pulls in Alpine fixes published since the base image was built (D1)
+# hadolint ignore=DL3017,DL3018
 RUN set -eux; \
+    apk upgrade --no-cache; \
     apk add --no-cache gcompat netcat-openbsd; \
     addgroup -S -g ${GID} ${USER_GROUP}; \
     adduser -D -u ${UID} -G ${USER_GROUP} ${USER_NAME}; \
@@ -73,13 +83,32 @@ RUN set -eux; \
 # s6-overlay
 COPY --from=s6-builder /s6-root/ /
 
+# /run belongs to the predbat user, the layout s6-overlay's preinit expects for
+# an unprivileged boot, so `--user ${UID}:${GID}` works with --cap-drop ALL and
+# no-new-privileges (homelab-runbooks #465). A default root run is unchanged:
+# preinit, running as root, chowns /run back to root (mode 0755) at start.
+RUN chown "${UID}:${GID}" /run && chmod 0755 /run
+
 # Python deps
 COPY --from=builder /install /usr/local/
 
+# Predbat never uses pip at runtime, and pip's bundled copies of urllib3,
+# setuptools and msgpack are what scanners flag (D8)
+RUN python3 -m pip uninstall -y pip setuptools wheel || true
+
+# Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
+# silently fetch batpred's default branch instead of the release (D6)
+RUN case "${PREDBAT_SHA}" in \
+      *[!0-9a-f]*) echo "PREDBAT_SHA must be a full commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1 ;; \
+    esac; \
+    if [ "${#PREDBAT_SHA}" -ne 40 ]; then \
+      echo "PREDBAT_SHA must be a full 40-character commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1; \
+    fi
+
 # App files - Predbat itself is fetched straight from GitHub, never vendored
 ADD --chown=${USER_NAME} \
-    https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/ \
-    https://github.com/springfall2008/batpred.git#$PREDBAT_VERSION:apps/predbat/config/ \
+    https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/ \
+    https://github.com/springfall2008/batpred.git#${PREDBAT_SHA}:apps/predbat/config/ \
     /addon/
 COPY --chown=${USER_NAME} rootfs/alpine/* /addon/
 
@@ -101,5 +130,10 @@ LABEL \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.title="Predbat Addon Docker version" \
     org.opencontainers.image.base.digest=${BASE_IMAGE} \
+    org.opencontainers.image.revision=${PREDBAT_SHA} \
     org.opencontainers.image.version=${PREDBAT_VERSION}
+# Predbat's web server answers on 5052 once it is running; a hung Predbat
+# shows as unhealthy instead of healthy (D12)
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
+    CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5052/dash"]
 ENTRYPOINT ["/init"]

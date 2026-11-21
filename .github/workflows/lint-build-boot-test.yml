@@ -9,6 +9,8 @@ on:
       - 'predbat/Dockerfile.slim'
       - 'predbat/rootfs/**'
       - 'predbat/requirements.txt'
+      - 'predbat/requirements.lock'
+      - 'predbat/.trivyignore'
       - 'versions.env'
       - '.github/workflows/lint-build-boot-test.yml'
   push:
@@ -64,8 +66,10 @@ jobs:
           # Predbat's startup takes much longer to reach the config-check prompt.
           - platform: linux/amd64
             boot_timeout: 90
+            start_timeout: 120
           - platform: linux/arm64
             boot_timeout: 240
+            start_timeout: 300
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +82,27 @@ jobs:
             echo "predbat_version=$(echo "$PREDBAT_VERSION" | tr -d '[:space:]')"
             echo "addon_version=$(echo "$ADDON_VERSION" | tr -d '[:space:]')"
             echo "s6_version=$(echo "$S6_VERSION" | tr -d '[:space:]')"
+            echo "s6_sha256_noarch=$(echo "$S6_SHA256_NOARCH" | tr -d '[:space:]')"
+            echo "s6_sha256_amd64=$(echo "$S6_SHA256_AMD64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm64=$(echo "$S6_SHA256_ARM64" | tr -d '[:space:]')"
+            echo "s6_sha256_arm=$(echo "$S6_SHA256_ARM" | tr -d '[:space:]')"
           } >> "$GITHUB_OUTPUT"
+
+      # Build from the commit the PREDBAT_VERSION tag points at, not the tag (D6)
+      - name: Resolve Predbat commit
+        id: predbat_sha
+        run: |
+          set -euo pipefail
+          tag="${{ steps.versions.outputs.predbat_version }}"
+          repo=https://github.com/springfall2008/batpred.git
+          sha=$(git ls-remote "$repo" "refs/tags/${tag}^{}" | cut -f1)
+          [ -n "$sha" ] || sha=$(git ls-remote "$repo" "refs/tags/${tag}" | cut -f1)
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve Predbat tag ${tag} to a commit (got '${sha}')"
+            exit 1
+          fi
+          echo "Predbat ${tag} = ${sha}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -97,8 +121,13 @@ jobs:
           tags: predbat-addon-test:${{ matrix.variant }}
           build-args: |
             PREDBAT_VERSION=${{ steps.versions.outputs.predbat_version }}
+            PREDBAT_SHA=${{ steps.predbat_sha.outputs.sha }}
             ADDON_VERSION=${{ steps.versions.outputs.addon_version }}
             S6_VERSION=${{ steps.versions.outputs.s6_version }}
+            S6_SHA256_NOARCH=${{ steps.versions.outputs.s6_sha256_noarch }}
+            S6_SHA256_AMD64=${{ steps.versions.outputs.s6_sha256_amd64 }}
+            S6_SHA256_ARM64=${{ steps.versions.outputs.s6_sha256_arm64 }}
+            S6_SHA256_ARM=${{ steps.versions.outputs.s6_sha256_arm }}
           cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }},mode=max
 
@@ -107,4 +136,20 @@ jobs:
           predbat/scripts/build-boot-test.sh ${{ matrix.variant }} \
             --tag predbat-addon-test:${{ matrix.variant }} \
             --platform ${{ matrix.platform }} \
-            --timeout ${{ matrix.boot_timeout }}
+            --timeout ${{ matrix.boot_timeout }} \
+            --start-timeout ${{ matrix.start_timeout }}
+
+      # Same thresholds and ignore file as the post-publish scan in
+      # sync-predbat.yml (D3): fail on fixable CRITICAL/HIGH only. A red step
+      # here shows the finding on the PR; it is not a required check, so it
+      # never blocks a merge (D2). amd64 only, like the post-publish scan.
+      - name: Trivy scan (${{ matrix.variant }})
+        if: matrix.platform == 'linux/amd64'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: predbat-addon-test:${{ matrix.variant }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '1'
