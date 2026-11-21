@@ -63,8 +63,10 @@ WORKDIR /config
 # hadolint ignore=DL3002,DL3066
 USER root
 
-# hadolint ignore=DL3018
+# apk upgrade pulls in Alpine fixes published since the base image was built (D1)
+# hadolint ignore=DL3017,DL3018
 RUN set -eux; \
+    apk upgrade --no-cache; \
     apk add --no-cache gcompat netcat-openbsd; \
     addgroup -S -g ${GID} ${USER_GROUP}; \
     adduser -D -u ${UID} -G ${USER_GROUP} ${USER_NAME}; \
