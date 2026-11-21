@@ -9,6 +9,7 @@ on:
       - 'predbat/Dockerfile.slim'
       - 'predbat/rootfs/**'
       - 'predbat/requirements.txt'
+      - 'predbat/.trivyignore'
       - 'versions.env'
       - '.github/workflows/lint-build-boot-test.yml'
   push:
@@ -108,3 +109,18 @@ jobs:
             --tag predbat-addon-test:${{ matrix.variant }} \
             --platform ${{ matrix.platform }} \
             --timeout ${{ matrix.boot_timeout }}
+
+      # Same thresholds and ignore file as the post-publish scan in
+      # sync-predbat.yml (D3): fail on fixable CRITICAL/HIGH only. A red step
+      # here shows the finding on the PR; it is not a required check, so it
+      # never blocks a merge (D2). amd64 only, like the post-publish scan.
+      - name: Trivy scan (${{ matrix.variant }})
+        if: matrix.platform == 'linux/amd64'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: predbat-addon-test:${{ matrix.variant }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '1'
