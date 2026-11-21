@@ -194,6 +194,71 @@ jobs:
           provenance: true
           sbom: true
 
+  # Post-publish scan (D2/D3). Runs after the images are pushed and never
+  # gates anything: release keeps needs: [check-and-sync, build] only. A
+  # fixable CRITICAL/HIGH finding fails this job, and GitHub's failed-run
+  # email is the alert; the next release or a manual rebuild fixes it.
+  scan:
+    needs: [check-and-sync, build]
+    if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && needs.check-and-sync.outputs.version_changed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: noble
+            tag_suffix: ""
+          - variant: alpine
+            tag_suffix: "alpine-"
+          - variant: slim
+            tag_suffix: "slim-"
+
+    env:
+      USER: ${{ secrets.DOCKERHUB_USERNAME }}
+      PREDBAT_VERSION: ${{ needs.check-and-sync.outputs.new_version }}
+      TRIVY_PLATFORM: linux/amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check-and-sync.outputs.commit_sha || github.sha }}
+
+      # Report for the Security tab: CRITICAL/HIGH including unfixed ones, so
+      # they are listed there without raising an alert. Never fails the job.
+      - name: Trivy report (${{ matrix.variant }}, SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}${{ env.PREDBAT_VERSION }}
+          format: sarif
+          output: trivy-${{ matrix.variant }}.sarif
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '0'
+
+      - name: Upload SARIF to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          sarif_file: trivy-${{ matrix.variant }}.sarif
+          category: trivy-${{ matrix.variant }}
+
+      # The alert: fixable CRITICAL/HIGH only (D3). exit-code 1 fails this job.
+      - name: Trivy gate (${{ matrix.variant }}, fixable CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.USER }}/predbat_addon:${{ matrix.tag_suffix }}${{ env.PREDBAT_VERSION }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: predbat/.trivyignore
+          exit-code: '1'
+
   release:
     needs: [check-and-sync, build]
     if: github.event_name == 'workflow_dispatch' || (needs.check-and-sync.outputs.addon_current == 'true' && needs.check-and-sync.outputs.version_changed == 'true')
