@@ -83,6 +83,10 @@ RUN set -eux; \
 COPY --from=s6-builder /s6-root/ /
 COPY --from=builder /install /usr/local/
 
+# Predbat never uses pip at runtime, and pip's bundled copies of urllib3,
+# setuptools and msgpack are what scanners flag (D8)
+RUN python3 -m pip uninstall -y pip setuptools wheel || true
+
 # Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
 # silently fetch batpred's default branch instead of the release (D6)
 RUN case "${PREDBAT_SHA}" in \

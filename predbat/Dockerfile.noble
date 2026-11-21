@@ -27,6 +27,11 @@ RUN apt-get update && apt-get upgrade -y && \
     #build-essential
     apt-get install -y --no-install-recommends python3-pip && \
     pip install --no-cache-dir --break-system-packages --require-hashes -r /requirements.lock && \
+    # Remove pip once the deps are in (D8); python3 is marked manual so
+    # autoremove keeps the full interpreter that python3-pip pulled in
+    apt-mark manual python3 && \
+    apt-get purge -y python3-pip && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
