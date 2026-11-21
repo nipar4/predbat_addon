@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'predbat/requirements.txt'
+      - 'predbat/requirements.lock'
       - 'versions.env'
 
 concurrency:

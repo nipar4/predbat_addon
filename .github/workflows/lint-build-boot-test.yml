@@ -9,6 +9,7 @@ on:
       - 'predbat/Dockerfile.slim'
       - 'predbat/rootfs/**'
       - 'predbat/requirements.txt'
+      - 'predbat/requirements.lock'
       - 'predbat/.trivyignore'
       - 'versions.env'
       - '.github/workflows/lint-build-boot-test.yml'

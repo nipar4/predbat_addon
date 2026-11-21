@@ -6,12 +6,12 @@ ARG BASE_IMAGE="python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d607
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /install
 
-COPY requirements.txt /
+COPY requirements.lock /
 
 # hadolint ignore=DL3018
 RUN set -eux; \
     apk add --no-cache --virtual .build-deps gcc g++ libffi-dev musl-dev; \
-    pip install --no-cache-dir --prefix=/install -r /requirements.txt
+    pip install --no-cache-dir --prefix=/install --require-hashes -r /requirements.lock
 
 # -------------------------------------------------
 # s6-overlay builder

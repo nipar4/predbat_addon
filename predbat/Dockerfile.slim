@@ -6,13 +6,13 @@ ARG BASE_IMAGE="python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d4
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /install
 
-COPY requirements.txt /
+COPY requirements.lock /
 
 # hadolint ignore=DL3008
 RUN set -eux; \
     apt-get update; \
     apt-get install --yes --no-install-recommends gcc g++ libffi-dev; \
-    pip install --no-cache-dir --prefix=/install -r /requirements.txt
+    pip install --no-cache-dir --prefix=/install --require-hashes -r /requirements.lock
 
 # -------------------------------------------------
 # s6-overlay builder

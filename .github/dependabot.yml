@@ -8,6 +8,16 @@ updates:
       docker-base:
         patterns: ["*"]
 
+  # Python deps for the alpine/slim/noble images: requirements.txt is the
+  # readable list, requirements.lock the hashed pins the Dockerfiles install
+  - package-ecosystem: "pip"
+    directory: "/predbat"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-deps:
+        patterns: ["*"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
