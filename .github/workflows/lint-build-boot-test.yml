@@ -66,8 +66,10 @@ jobs:
           # Predbat's startup takes much longer to reach the config-check prompt.
           - platform: linux/amd64
             boot_timeout: 90
+            start_timeout: 300
           - platform: linux/arm64
             boot_timeout: 240
+            start_timeout: 900
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,7 +136,8 @@ jobs:
           predbat/scripts/build-boot-test.sh ${{ matrix.variant }} \
             --tag predbat-addon-test:${{ matrix.variant }} \
             --platform ${{ matrix.platform }} \
-            --timeout ${{ matrix.boot_timeout }}
+            --timeout ${{ matrix.boot_timeout }} \
+            --start-timeout ${{ matrix.start_timeout }}
 
       # Same thresholds and ignore file as the post-publish scan in
       # sync-predbat.yml (D3): fail on fixable CRITICAL/HIGH only. A red step
