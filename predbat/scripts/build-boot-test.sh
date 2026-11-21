@@ -14,7 +14,7 @@
 # Then a second phase (homelab-runbooks #470) verifies, without waiting for
 # Predbat itself (it cannot start without Home Assistant):
 #   - pip has been removed (`python3 -m pip --version` fails)
-#   - the image defines a HEALTHCHECK requesting 127.0.0.1:5052
+#   - the image defines a HEALTHCHECK requesting 127.0.0.1:5052/dash
 #   - after dropping `template: true` from the container's apps.yaml, the
 #     web-login WARNING appears and is the only "warning" in the logs
 #
@@ -184,11 +184,11 @@ if docker exec "$container" python3 -m pip --version >/dev/null 2>&1; then
 fi
 echo "==> pip is not installed"
 
-# D12: the image defines a HEALTHCHECK that requests Predbat's web port
+# D12: the image defines a HEALTHCHECK that requests Predbat's dashboard page
 healthcheck="$(docker inspect --format '{{json .Config.Healthcheck}}' "$tag")"
 echo "==> Healthcheck: $healthcheck"
-if [ -z "$healthcheck" ] || [ "$healthcheck" = "null" ] || ! grep -qF "127.0.0.1:5052" <<<"$healthcheck"; then
-  echo "FAIL: image has no HEALTHCHECK requesting 127.0.0.1:5052" >&2
+if [ -z "$healthcheck" ] || [ "$healthcheck" = "null" ] || ! grep -qF "127.0.0.1:5052/dash" <<<"$healthcheck"; then
+  echo "FAIL: image has no HEALTHCHECK requesting 127.0.0.1:5052/dash" >&2
   exit 1
 fi
 
