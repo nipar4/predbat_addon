@@ -65,9 +65,11 @@ WORKDIR /config
 # hadolint ignore=DL3002,DL3066
 USER root
 
-# hadolint ignore=DL3008
+# apt-get upgrade pulls in Debian fixes published since the base image was built (D1)
+# hadolint ignore=DL3005,DL3008
 RUN set -eux; \
     apt-get update; \
+    apt-get upgrade -y; \
     apt-get install -y --no-install-recommends netcat-openbsd ca-certificates; \
     groupadd -g ${GID} ${USER_GROUP}; \
     useradd -l -u ${UID} -g ${GID} -m -s /bin/bash ${USER_NAME}; \
