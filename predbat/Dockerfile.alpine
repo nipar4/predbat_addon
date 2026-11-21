@@ -126,4 +126,8 @@ LABEL \
     org.opencontainers.image.base.digest=${BASE_IMAGE} \
     org.opencontainers.image.revision=${PREDBAT_SHA} \
     org.opencontainers.image.version=${PREDBAT_VERSION}
+# Predbat's web server answers on 5052 once it is running; a hung Predbat
+# shows as unhealthy instead of healthy (D12)
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
+    CMD wget -q -O /dev/null http://127.0.0.1:5052/ || exit 1
 ENTRYPOINT ["/init"]
