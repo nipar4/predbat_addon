@@ -29,6 +29,17 @@ do
     fi
 done
 
+# Predbat's web login is off unless apps.yaml sets web_username/web_password:
+# say so, without printing any values (D13). Predbat's own code is unchanged.
+if ! grep -Eq '^[[:space:]]*web_(username|password):[[:space:]]*[^[:space:]#]' /config/apps.yaml; then
+    echo "#################################################"
+    echo "WARNING: the Predbat web interface (port 5052) has no login."
+    echo "Anyone who can reach the port can change Predbat's settings."
+    echo "Set web_username and web_password in apps.yaml, see"
+    echo "https://springfall2008.github.io/batpred/apps-yaml/#web-interface"
+    echo "#################################################"
+fi
+
 # Start Predbat
 
 while true
