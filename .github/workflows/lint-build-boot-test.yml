@@ -88,7 +88,7 @@ jobs:
             echo "s6_sha256_arm=$(echo "$S6_SHA256_ARM" | tr -d '[:space:]')"
           } >> "$GITHUB_OUTPUT"
 
-      # Build from the commit the PREDBAT_VERSION tag points at, not the tag (D6)
+      # Build from the commit the PREDBAT_VERSION tag points at, not the tag
       - name: Resolve Predbat commit
         id: predbat_sha
         run: |
@@ -140,9 +140,9 @@ jobs:
             --start-timeout ${{ matrix.start_timeout }}
 
       # Same thresholds and ignore file as the post-publish scan in
-      # sync-predbat.yml (D3): fail on fixable CRITICAL/HIGH only. A red step
+      # sync-predbat.yml: fail on fixable CRITICAL/HIGH only. A red step
       # here shows the finding on the PR; it is not a required check, so it
-      # never blocks a merge (D2). amd64 only, like the post-publish scan.
+      # never blocks a merge. amd64 only, like the post-publish scan.
       - name: Trivy scan (${{ matrix.variant }})
         if: matrix.platform == 'linux/amd64'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

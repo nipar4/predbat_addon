@@ -10,8 +10,8 @@
 #   - for alpine/slim (s6-based; noble has no s6-overlay), the predbat service is
 #     up and wait-for-ha is in an expected state
 # The same boot checks then run again as the predbat user (9005) with
-# --cap-drop ALL and no-new-privileges (homelab-runbooks #465).
-# Then a second phase (homelab-runbooks #470) verifies, without waiting for
+# --cap-drop ALL and no-new-privileges.
+# Then a second phase verifies, without waiting for
 # Predbat itself (it cannot start without Home Assistant):
 #   - pip has been removed (`python3 -m pip --version` fails)
 #   - the image defines a HEALTHCHECK requesting 127.0.0.1:5052/dash
@@ -155,7 +155,7 @@ boot_and_check "$container"
 echo "==> Phase 1 passed: ${variant} boots cleanly, no warnings, services in expected state"
 
 # ---------------------------------------------------------------------------
-# Non-root phase (homelab-runbooks #465): the same checks with the image's
+# Non-root phase: the same checks with the image's
 # predbat user, no capabilities and no-new-privileges, as the README's
 # "Running securely" example runs it.
 # ---------------------------------------------------------------------------
@@ -169,22 +169,22 @@ docker rm -f "$nonroot_container" >/dev/null 2>&1 || true
 echo "==> Non-root phase passed: ${variant} boots as 9005 with --cap-drop ALL and no-new-privileges"
 
 # ---------------------------------------------------------------------------
-# Phase 2 (homelab-runbooks #470). Test-only: the image is not changed, only
+# Phase 2. Test-only: the image is not changed, only
 # this container's /config/apps.yaml. Predbat itself cannot start in CI (no
 # Home Assistant), so nothing here waits for it.
 # ---------------------------------------------------------------------------
 # The only "warning" allowed in the logs: run.docker.sh / run.standalone.sh's
-# notice that the web interface has no login (D13)
+# notice that the web interface has no login
 login_warning="WARNING: the Predbat web interface (port 5052) has no login."
 
-# D8: pip has been removed from the image
+# pip has been removed from the image
 if docker exec "$container" python3 -m pip --version >/dev/null 2>&1; then
   echo "FAIL: pip is still installed in the image (python3 -m pip --version succeeded)" >&2
   exit 1
 fi
 echo "==> pip is not installed"
 
-# D12: the image defines a HEALTHCHECK that requests Predbat's dashboard page
+# The image defines a HEALTHCHECK that requests Predbat's dashboard page
 healthcheck="$(docker inspect --format '{{json .Config.Healthcheck}}' "$tag")"
 echo "==> Healthcheck: $healthcheck"
 if [ -z "$healthcheck" ] || [ "$healthcheck" = "null" ] || ! grep -qF "127.0.0.1:5052/dash" <<<"$healthcheck"; then
@@ -192,7 +192,7 @@ if [ -z "$healthcheck" ] || [ "$healthcheck" = "null" ] || ! grep -qF "127.0.0.1
   exit 1
 fi
 
-# D13: with template: true removed, the web-login warning appears
+# With template: true removed, the web-login warning appears
 echo "==> Phase 2: removing 'template: true' from /config/apps.yaml"
 docker exec "$container" sed -i '/^[^#]*template: true/d' /config/apps.yaml
 if docker exec "$container" grep -q "^[^#]*template: true" /config/apps.yaml; then

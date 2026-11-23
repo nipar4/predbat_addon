@@ -1,5 +1,5 @@
 # Fully pinned, hash-checked Python dependencies for the alpine, slim and noble
-# images (D7, homelab-runbooks #466). Generated from requirements.txt - edit
+# images. Generated from requirements.txt - edit
 # that file, never this one, then regenerate from the predbat/ directory:
 #
 #   uv pip compile requirements.txt --python-version 3.13 --python-platform linux \

@@ -16,7 +16,7 @@ updates:
       interval: "weekly"
     ignore:
       # Follow upstream Predbat's pins (batpred requirements.txt: numpy==2.3.5,
-      # ruamel.yaml unpinned); bump by hand when upstream does (homelab #471, #472)
+      # ruamel.yaml unpinned); bump by hand when upstream does
       - dependency-name: "numpy"
       - dependency-name: "ruamel.yaml"
     groups:

@@ -21,7 +21,7 @@ FROM ${BASE_IMAGE} AS s6-builder
 
 ARG S6_VERSION=v3.2.2.0
 # Checksums from versions.env, passed in by CI; no defaults, so a build
-# without them fails instead of skipping the check (D5)
+# without them fails instead of skipping the check
 ARG S6_SHA256_NOARCH
 ARG S6_SHA256_AMD64
 ARG S6_SHA256_ARM64
@@ -59,7 +59,7 @@ ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
-# Commit the PREDBAT_VERSION tag points at, resolved by CI (D6)
+# Commit the PREDBAT_VERSION tag points at, resolved by CI
 ARG PREDBAT_SHA
 ARG BASE_IMAGE
 ARG BUILD_DATE
@@ -73,7 +73,7 @@ WORKDIR /config
 # hadolint ignore=DL3002,DL3066
 USER root
 
-# apt-get upgrade pulls in Debian fixes published since the base image was built (D1)
+# apt-get upgrade pulls in Debian fixes published since the base image was built
 # hadolint ignore=DL3005,DL3008
 RUN set -eux; \
     apt-get update; \
@@ -90,17 +90,17 @@ COPY --from=s6-builder /s6-root/ /
 
 # /run belongs to the predbat user, the layout s6-overlay's preinit expects for
 # an unprivileged boot, so `--user ${UID}:${GID}` works with --cap-drop ALL and
-# no-new-privileges (homelab-runbooks #465). A default root run is unchanged:
+# no-new-privileges. A default root run is unchanged:
 # preinit, running as root, chowns /run back to root (mode 0755) at start.
 RUN chown "${UID}:${GID}" /run && chmod 0755 /run
 COPY --from=builder /install /usr/local/
 
 # Predbat never uses pip at runtime, and pip's bundled copies of urllib3,
-# setuptools and msgpack are what scanners flag (D8)
+# setuptools and msgpack are what scanners flag
 RUN python3 -m pip uninstall -y pip setuptools wheel || true
 
 # Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
-# silently fetch batpred's default branch instead of the release (D6)
+# silently fetch batpred's default branch instead of the release
 RUN case "${PREDBAT_SHA}" in \
       *[!0-9a-f]*) echo "PREDBAT_SHA must be a full commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1 ;; \
     esac; \
@@ -135,7 +135,7 @@ LABEL \
     org.opencontainers.image.revision=${PREDBAT_SHA} \
     org.opencontainers.image.version=${PREDBAT_VERSION}
 # Predbat's web server answers on 5052 once it is running; a hung Predbat
-# shows as unhealthy instead of healthy (D12)
+# shows as unhealthy instead of healthy
 HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
     CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5052/dash', timeout=4)"]
 ENTRYPOINT ["/init"]

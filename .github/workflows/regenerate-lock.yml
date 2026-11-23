@@ -3,7 +3,7 @@ name: Regenerate requirements.lock
 # Dependabot's pip ecosystem does not read predbat/requirements.lock, so this
 # job regenerates it monthly from predbat/requirements.txt (same uv command as
 # the lock's header) and opens or updates a pull request when the pins change.
-# Nothing is merged automatically (homelab-runbooks #469).
+# Nothing is merged automatically.
 #
 # A pull request opened with GITHUB_TOKEN does not trigger other workflows, so
 # lint-build-boot-test.yml does not run on it by itself: close and reopen the
