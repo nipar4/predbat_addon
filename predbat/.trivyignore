@@ -1,4 +1,4 @@
-# Trivy ignore list for the alpine, slim and noble images (homelab-runbooks #465, D3).
+# Trivy ignore list for the alpine, slim and noble images.
 #
 # Used by both Trivy scans: the pull-request scan in
 # .github/workflows/lint-build-boot-test.yml and the post-publish scan job in

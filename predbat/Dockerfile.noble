@@ -1,4 +1,4 @@
-# Ubuntu 26.04, pinned (D11): ubuntu:latest moved from 24.04 to 26.04 without
+# Ubuntu 26.04, pinned: ubuntu:latest moved from 24.04 to 26.04 without
 # warning, which changed Python from 3.12 to 3.14 for users. Despite the file
 # name this is not noble (24.04). Security patches still come in through the
 # apt-get upgrade below.
@@ -9,7 +9,7 @@ ARG USER_GROUP="predbat"
 ARG UID="9005"
 ARG GID="9005"
 ARG PREDBAT_VERSION
-# Commit the PREDBAT_VERSION tag points at, resolved by CI (D6)
+# Commit the PREDBAT_VERSION tag points at, resolved by CI
 ARG PREDBAT_SHA
 ARG BASE_IMAGE
 ARG BUILD_DATE
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get upgrade -y && \
     #build-essential
     apt-get install -y --no-install-recommends python3-pip && \
     pip install --no-cache-dir --break-system-packages --require-hashes -r /requirements.lock && \
-    # Remove pip once the deps are in (D8); python3 is marked manual so
+    # Remove pip once the deps are in; python3 is marked manual so
     # autoremove keeps the full interpreter that python3-pip pulled in
     apt-mark manual python3 && \
     apt-get purge -y python3-pip && \
@@ -41,7 +41,7 @@ RUN groupadd -g ${GID} ${USER_GROUP} \
     && useradd -l -u ${UID} -g ${GID} ${USER_NAME} \
     && chown -R ${USER_NAME} /config
 # Fail fast unless PREDBAT_SHA is a full commit SHA: an empty #ref would
-# silently fetch batpred's default branch instead of the release (D6)
+# silently fetch batpred's default branch instead of the release
 RUN case "${PREDBAT_SHA}" in \
       *[!0-9a-f]*) echo "PREDBAT_SHA must be a full commit SHA, got '${PREDBAT_SHA}'" >&2; exit 1 ;; \
     esac; \
@@ -81,7 +81,7 @@ LABEL \
     org.opencontainers.image.version=${PREDBAT_VERSION}
 
 # Predbat's web server answers on 5052 once it is running; a hung Predbat
-# shows as unhealthy instead of healthy (D12)
+# shows as unhealthy instead of healthy
 HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
     CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5052/dash', timeout=4)"]
 # Set the entrypoint to the startup script

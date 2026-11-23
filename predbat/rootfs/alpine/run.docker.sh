@@ -23,7 +23,7 @@ while grep -q "^[^#]*template: true" /config/apps.yaml; do
 done
 
 # Predbat's web login is off unless apps.yaml sets web_username/web_password:
-# say so, without printing any values (D13). Predbat's own code is unchanged.
+# say so, without printing any values. Predbat's own code is unchanged.
 if ! grep -Eq '^[[:space:]]*web_(username|password):[[:space:]]*[^[:space:]#]' /config/apps.yaml; then
     echo "#################################################"
     echo "WARNING: the Predbat web interface (port 5052) has no login."
