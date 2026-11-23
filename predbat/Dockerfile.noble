@@ -33,7 +33,10 @@ RUN apt-get update && apt-get upgrade -y && \
     apt-get purge -y python3-pip && \
     apt-get autoremove -y && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    # pebble ships in the Ubuntu base image and is unused; removing it drops
+    # its Go stdlib CVEs from the image
+    rm -f /usr/bin/pebble
 
 # Set the working directory
 WORKDIR /config
